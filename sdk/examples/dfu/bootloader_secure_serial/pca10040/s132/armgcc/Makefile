@@ -15,7 +15,7 @@ SRC_FILES += \
   $(SDK_ROOT)/components/libraries/experimental_log/src/nrf_log_frontend.c \
   $(SDK_ROOT)/components/boards/boards.c \
   $(PROJ_DIR)/../dfu_req_handling/dfu-cc.pb.c \
-  $(PROJ_DIR)/../dfu_req_handling/dfu_public_key.c \
+  $(PROJ_DIR)/../dfu_req_handling/public_key.c \
   $(PROJ_DIR)/../dfu_req_handling/dfu_req_handling.c \
   $(SDK_ROOT)/components/libraries/button/app_button.c \
   $(SDK_ROOT)/components/libraries/util/app_error_weak.c \

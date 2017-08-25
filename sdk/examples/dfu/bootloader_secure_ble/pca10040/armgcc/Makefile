@@ -12,7 +12,7 @@ $(OUTPUT_DIRECTORY)/nrf52832_xxaa_s132.out: \
 SRC_FILES += \
   $(SDK_ROOT)/components/boards/boards.c \
   $(PROJ_DIR)/../dfu_req_handling/dfu-cc.pb.c \
-  $(PROJ_DIR)/../dfu_req_handling/dfu_public_key.c \
+  $(PROJ_DIR)/../dfu_req_handling/public_key.c \
   $(PROJ_DIR)/../dfu_req_handling/dfu_req_handling.c \
   $(SDK_ROOT)/components/libraries/util/app_error_weak.c \
   $(SDK_ROOT)/components/libraries/scheduler/app_scheduler.c \

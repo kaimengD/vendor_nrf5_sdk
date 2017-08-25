@@ -1,0 +1,9 @@
+__build__/
+__pycache__
+*/private.key
+*.pyc
+*.pyo
+*.pyd
+*.pyz
+*.egg-info/
+.DS_Store

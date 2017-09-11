@@ -1292,7 +1292,7 @@
 // <e> SAADC_ENABLED - nrf_drv_saadc - SAADC peripheral driver
 //==========================================================
 #ifndef SAADC_ENABLED
-#define SAADC_ENABLED 0
+#define SAADC_ENABLED 1
 #endif
 // <o> SAADC_CONFIG_RESOLUTION  - Resolution
  
@@ -2007,6 +2007,13 @@
 // <h> nRF_Libraries 
 
 //==========================================================
+// <q> APP_FIFO_ENABLED  - app_fifo - Software FIFO implementation
+ 
+
+#ifndef APP_FIFO_ENABLED
+#define APP_FIFO_ENABLED 1
+#endif
+
 // <q> APP_GPIOTE_ENABLED  - app_gpiote - GPIOTE events dispatcher
  
 
@@ -2412,12 +2419,12 @@
 
 // <o> HCI_UART_RX_PIN - UART RX pin 
 #ifndef HCI_UART_RX_PIN
-#define HCI_UART_RX_PIN 8
+#define HCI_UART_RX_PIN 26
 #endif
 
 // <o> HCI_UART_TX_PIN - UART TX pin 
 #ifndef HCI_UART_TX_PIN
-#define HCI_UART_TX_PIN 6
+#define HCI_UART_TX_PIN 24
 #endif
 
 // <o> HCI_UART_RTS_PIN - UART RTS pin 
@@ -2991,7 +2998,7 @@
 #endif
 // <o> NRF_LOG_BACKEND_UART_TX_PIN - UART TX pin 
 #ifndef NRF_LOG_BACKEND_UART_TX_PIN
-#define NRF_LOG_BACKEND_UART_TX_PIN 6
+#define NRF_LOG_BACKEND_UART_TX_PIN 24
 #endif
 
 // <o> NRF_LOG_BACKEND_UART_BAUDRATE  - Default Baudrate

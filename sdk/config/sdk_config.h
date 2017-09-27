@@ -46,6 +46,57 @@
 #ifdef USE_APP_CONFIG
 #include "app_config.h"
 #endif
+
+// <h> nRF_BLE_DFU 
+
+//==========================================================
+// <q> NRF_DFU_BLE_REQUIRES_BONDS  - nrf_ble_dfu - BLE DFU module
+ 
+
+#ifndef NRF_DFU_BLE_REQUIRES_BONDS
+#define NRF_DFU_BLE_REQUIRES_BONDS 0
+#endif
+
+// </h> 
+//==========================================================
+
+// <h> nRF_Bootloader 
+
+//==========================================================
+// <h> nrf_dfu - DFU Bootloader
+
+//==========================================================
+// <o> NRF_DFU_INACTIVITY_TIMEOUT_MS - Timeout in ms before automatically starting a valid application due to inactivity  <100-60000000> 
+
+
+#ifndef NRF_DFU_INACTIVITY_TIMEOUT_MS
+#define NRF_DFU_INACTIVITY_TIMEOUT_MS 120000
+#endif
+
+// <o> NRF_DFU_POST_SD_BL_TIMEOUT_MS - Timeout in ms before automatically starting a valid application after a bootloader or SoftDevice update  <100-60000000> 
+
+
+#ifndef NRF_DFU_POST_SD_BL_TIMEOUT_MS
+#define NRF_DFU_POST_SD_BL_TIMEOUT_MS 10000
+#endif
+
+// <h> DFU flash buffers 
+
+//==========================================================
+// <o> FLASH_BUFFER_COUNT - Number of flash buffers. 
+// <i> Must be a power of two.
+
+#ifndef FLASH_BUFFER_COUNT
+#define FLASH_BUFFER_COUNT 4
+#endif
+
+// <o> FLASH_BUFFER_LENGTH - Length of a flash buffer, in bytes. 
+// <i> Must be a multiple of the word size.
+
+#ifndef FLASH_BUFFER_LENGTH
+#define FLASH_BUFFER_LENGTH 128
+#endif
+
 // <h> nRF_BLE 
 
 //==========================================================
@@ -53,7 +104,7 @@
  
 
 #ifndef BLE_ADVERTISING_ENABLED
-#define BLE_ADVERTISING_ENABLED 0
+#define BLE_ADVERTISING_ENABLED 1
 #endif
 
 // <q> BLE_DTM_ENABLED  - ble_dtm - Module for testing RF/PHY using DTM commands
@@ -108,7 +159,7 @@
 // <e> PEER_MANAGER_ENABLED - peer_manager - Peer Manager
 //==========================================================
 #ifndef PEER_MANAGER_ENABLED
-#define PEER_MANAGER_ENABLED 0
+#define PEER_MANAGER_ENABLED 1
 #endif
 // <o> PM_MAX_REGISTRANTS  
 // <i> Number of event handlers that can be registered.
@@ -158,7 +209,7 @@
  
 
 #ifndef BLE_BAS_ENABLED
-#define BLE_BAS_ENABLED 0
+#define BLE_BAS_ENABLED 1
 #endif
 
 // <q> BLE_CSCS_ENABLED  - ble_cscs - Cycling Speed and Cadence Service
@@ -179,7 +230,7 @@
  
 
 #ifndef BLE_DIS_ENABLED
-#define BLE_DIS_ENABLED 0
+#define BLE_DIS_ENABLED 1
 #endif
 
 // <q> BLE_GLS_ENABLED  - ble_gls - Glucose Service
@@ -300,7 +351,7 @@
  
 
 #ifndef BLE_DFU_ENABLED
-#define BLE_DFU_ENABLED 0
+#define BLE_DFU_ENABLED 1
 #endif
 
 // <q> NRF_DFU_BLE_BUTTONLESS_SUPPORTS_BONDS  - Buttonless DFU supports bonds.
@@ -2231,7 +2282,7 @@
 // <e> FDS_ENABLED - fds - Flash data storage module
 //==========================================================
 #ifndef FDS_ENABLED
-#define FDS_ENABLED 0
+#define FDS_ENABLED 1
 #endif
 // <h> Pages - Virtual page settings
 
@@ -2710,7 +2761,7 @@
 // <e> NRF_FSTORAGE_ENABLED - nrf_fstorage - Flash abstraction library
 //==========================================================
 #ifndef NRF_FSTORAGE_ENABLED
-#define NRF_FSTORAGE_ENABLED 0
+#define NRF_FSTORAGE_ENABLED 1
 #endif
 // <h> nrf_fstorage_sd - Implementation using the SoftDevice.
 

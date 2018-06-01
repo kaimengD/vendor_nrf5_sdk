@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2016 - 2017, Nordic Semiconductor ASA
+ * Copyright (c) 2016 - 2018, Nordic Semiconductor ASA
  * 
  * All rights reserved.
  * 
@@ -43,7 +43,6 @@
 #include <stdint.h>
 #include "sdk_errors.h"
 #include "app_timer.h"
-#include "nrf_drv_common.h"
 
 /** @file
  *
@@ -70,7 +69,7 @@ typedef struct
  */
 typedef struct
 {
-    uint16_t                    read_value;             /**< Value which was read on the analog channel. For nRF51, this value is voltage in millivolts. For nRF52, it is time in 	ticks of 10 periods of the relaxation oscillator. Voltage corresponds to capacitance of the pad attached to analog channel and gets higher once it
+    uint16_t                    read_value;             /**< Value which was read on the analog channel. For nRF51, this value is voltage in millivolts. For nRF52, it is time in ticks of 10 periods of the relaxation oscillator. Voltage corresponds to capacitance of the pad attached to analog channel and gets higher once it
                                                         is touched. Period of relaxation also corresponds to the pad capacitance and increases its value when capacitance gets
                                                         higher. */
     uint8_t                     analog_channel;         /**< Index of the analog channel from which the value was read. */

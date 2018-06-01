@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2017 - 2017, Nordic Semiconductor ASA
+ * Copyright (c) 2017 - 2018, Nordic Semiconductor ASA
  * 
  * All rights reserved.
  * 
@@ -50,20 +50,41 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "app_error.h"
+#include "app_scheduler.h"
 #include "boards.h"
 #include "nfc_t4t_lib.h"
 #include "nrf_log_ctrl.h"
-#include "nrf_sdh.h"
 #include "ndef_file_m.h"
 #include "nfc_ndef_msg.h"
 
 #include "nrf_log.h"
+#include "nrf_log_ctrl.h"
 #include "nrf_log_default_backends.h"
 
-#define APP_DEFAULT_BTN BSP_BOARD_BUTTON_0     /**< Button used to set default NDEF message. */
+#define APP_SCHED_MAX_EVENT_SIZE 0                  /**< Maximum size of scheduler events. */
+#define APP_SCHED_QUEUE_SIZE     4                  /**< Maximum number of events in the scheduler queue. */
+#define APP_DEFAULT_BTN          BSP_BOARD_BUTTON_0 /**< Button used to set default NDEF message. */
 
-static uint8_t m_ndef_msg_buf[NDEF_FILE_SIZE]; /**< Buffer for NDEF file. */
-volatile bool  m_update_state;                 /**< Flag indicating that Type 4 Tag performs NDEF message update procedure. */
+static uint8_t m_ndef_msg_buf[NDEF_FILE_SIZE];      /**< Buffer for NDEF file. */
+static uint8_t m_ndef_msg_len;                      /**< Length of the NDEF message. */
+
+
+/**
+ * @brief Function for updating NDEF message in the flash file.
+ */
+static void scheduler_ndef_file_update(void * p_event_data, uint16_t event_size)
+{
+    ret_code_t err_code;
+
+    UNUSED_PARAMETER(p_event_data);
+    UNUSED_PARAMETER(event_size);
+
+    // Update flash file with new NDEF message.
+    err_code = ndef_file_update(m_ndef_msg_buf, m_ndef_msg_len + NLEN_FIELD_SIZE);
+    APP_ERROR_CHECK(err_code);
+
+    NRF_LOG_INFO("NDEF message updated!");
+}
 
 
 /**
@@ -85,7 +106,6 @@ static void nfc_callback(void          * context,
 
         case NFC_T4T_EVENT_FIELD_OFF:
             bsp_board_leds_off();
-            m_update_state = false;
             break;
 
         case NFC_T4T_EVENT_NDEF_READ:
@@ -93,20 +113,16 @@ static void nfc_callback(void          * context,
             break;
 
         case NFC_T4T_EVENT_NDEF_UPDATED:
-            if (dataLength == 0)
-            {
-                m_update_state = true;
-            }
-            else if (m_update_state)
+            if (dataLength > 0)
             {
                 ret_code_t err_code;
-                m_update_state = false;
+
                 bsp_board_led_on(BSP_BOARD_LED_1);
 
-                // Update FLASH NDEF message file with new message.
-                err_code = ndef_file_update(m_ndef_msg_buf, dataLength + NLEN_FIELD_SIZE);
+                // Schedule update of NDEF message in the flash file.
+                m_ndef_msg_len = dataLength;
+                err_code       = app_sched_event_put(NULL, 0, scheduler_ndef_file_update);
                 APP_ERROR_CHECK(err_code);
-                NRF_LOG_DEBUG("NDEF message updated!");
             }
             break;
 
@@ -117,12 +133,14 @@ static void nfc_callback(void          * context,
 
 
 /**
- * @brief   Initialize the SoftDevice handler module.
+ *@brief Function for initializing logging.
  */
-static void softdevice_setup(void)
+static void log_init(void)
 {
-    ret_code_t err_code = nrf_sdh_enable_request();
+    ret_code_t err_code = NRF_LOG_INIT(NULL);
     APP_ERROR_CHECK(err_code);
+
+    NRF_LOG_DEFAULT_BACKENDS_INIT();
 }
 
 
@@ -133,23 +151,19 @@ int main(void)
 {
     ret_code_t err_code;
 
-    err_code = NRF_LOG_INIT(NULL);
-    APP_ERROR_CHECK(err_code);
-
-    NRF_LOG_DEFAULT_BACKENDS_INIT();
-
-    /* Initialize SoftDevice - it is required by FDS. */
-    softdevice_setup();
+    log_init();
 
     /* Configure LED-pins as outputs */
-    bsp_board_leds_init();
-    bsp_board_buttons_init();
+    bsp_board_init(BSP_INIT_LEDS | BSP_INIT_BUTTONS);
+
+    /* Initialize App Scheduler. */
+    APP_SCHED_INIT(APP_SCHED_MAX_EVENT_SIZE, APP_SCHED_QUEUE_SIZE);
 
     /* Initialize FDS. */
     err_code = ndef_file_setup();
     APP_ERROR_CHECK(err_code);
 
-    /* Load NDEF message from the FLASH NDEF file. */
+    /* Load NDEF message from the flash file. */
     err_code = ndef_file_load(m_ndef_msg_buf, sizeof(m_ndef_msg_buf));
     APP_ERROR_CHECK(err_code);
 
@@ -172,15 +186,20 @@ int main(void)
     err_code = nfc_t4t_ndef_rwpayload_set(m_ndef_msg_buf, sizeof(m_ndef_msg_buf));
     APP_ERROR_CHECK(err_code);
 
+    NRF_LOG_INFO("Writable NDEF message example started.");
+
     /* Start sensing NFC field */
     err_code = nfc_t4t_emulation_start();
     APP_ERROR_CHECK(err_code);
 
     while (1)
     {
+        app_sched_execute();
+
         NRF_LOG_FLUSH();
         __WFE();
     }
 }
+
 
 /** @} */

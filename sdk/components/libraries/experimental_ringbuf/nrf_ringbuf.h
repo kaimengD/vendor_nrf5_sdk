@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2017 - 2017, Nordic Semiconductor ASA
+ * Copyright (c) 2017 - 2018, Nordic Semiconductor ASA
  * 
  * All rights reserved.
  * 
@@ -59,7 +59,8 @@ extern "C" {
  * */
 typedef struct
 {
-    nrf_atomic_flag_t   flag;       //!< Protection flags.
+    nrf_atomic_flag_t   wr_flag;   //!< Protection flag.
+    nrf_atomic_flag_t   rd_flag;   //!< Protection flag.
     uint32_t            wr_idx;     //!< Write index (updated when putting).
     uint32_t            tmp_wr_idx; //!< Temporary write index (updated when allocating).
     uint32_t            rd_idx;     //!< Read index (updated when freeing).

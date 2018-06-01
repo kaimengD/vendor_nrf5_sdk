@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2016 - 2017, Nordic Semiconductor ASA
+ * Copyright (c) 2016 - 2018, Nordic Semiconductor ASA
  * 
  * All rights reserved.
  * 
@@ -40,11 +40,11 @@
 #ifndef APP_USBD_MSC_DESC_H__
 #define APP_USBD_MSC_DESC_H__
 
+#include "app_usbd_descriptor.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-#include "app_usbd_descriptor.h"
 
 /**
  * @defgroup app_usbd_msc_desc USB MSC descriptors

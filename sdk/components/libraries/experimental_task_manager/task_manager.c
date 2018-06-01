@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2017 - 2017, Nordic Semiconductor ASA
+ * Copyright (c) 2017 - 2018, Nordic Semiconductor ASA
  * 
  * All rights reserved.
  * 
@@ -37,7 +37,8 @@
  * OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  * 
  */
-#include "sdk_config.h"
+#include "sdk_common.h"
+#if NRF_MODULE_ENABLED(TASK_MANAGER)
 #include "nrf_mpu.h"
 #include "nrf_atomic.h"
 #include "app_util_platform.h"
@@ -59,10 +60,11 @@ NRF_LOG_MODULE_REGISTER();
 
 #if TASK_MANAGER_CONFIG_STACK_GUARD
 #define STACK_GUARD_SIZE    (1 << (TASK_MANAGER_CONFIG_STACK_GUARD + 1))
+STATIC_ASSERT((TASK_MANAGER_CONFIG_STACK_SIZE % STACK_GUARD_SIZE) == 0);
 #endif
 
+STATIC_ASSERT((TASK_MANAGER_CONFIG_MAX_TASKS) > 0);
 STATIC_ASSERT((TASK_MANAGER_CONFIG_STACK_SIZE % 8) == 0);
-STATIC_ASSERT((TASK_MANAGER_CONFIG_STACK_SIZE % STACK_GUARD_SIZE) == 0);
 
 // Support older CMSIS avaiable in Keil 4
 #if (__CORTEX_M == 4)
@@ -146,6 +148,8 @@ typedef struct
 
 /**@brief Stack space for tasks */
 #if TASK_MANAGER_CONFIG_STACK_GUARD
+/**@brief Handle to MPU region used as a guard */
+static nrf_mpu_region_t s_guard_region;
 __ALIGN(STACK_GUARD_SIZE)
 #else
 __ALIGN(8)
@@ -167,8 +171,6 @@ static task_id_t s_current_task_id;
 #define TASK_GUARD_ATTRIBUTES ((0x05 << MPU_RASR_TEX_Pos) | (1 << MPU_RASR_B_Pos) | \
                                (0x07 << MPU_RASR_AP_Pos)  | (1 << MPU_RASR_XN_Pos))
 
-/**@brief Handle to MPU region used as a guard */
-static nrf_mpu_region_t s_guard_region;
 
 /**@brief Macro for getting pointer to bottom of stack for given task id */
 #define BOTTOM_OF_TASK_STACK(_task_id)  ((void *)(&s_task_stacks[(_task_id)].stack[0]))
@@ -212,6 +214,7 @@ static void task_stack_protect(task_id_t task_id)
 #endif
 }
 
+PRAGMA_OPTIMIZATION_FORCE_START
 void task_manager_start(task_main_t idle_task, void *p_idle_task_context)
 {
     unsigned long control;
@@ -263,6 +266,7 @@ void task_manager_start(task_main_t idle_task, void *p_idle_task_context)
     // This should be never reached.
     APP_ERROR_CHECK_BOOL(false);
 }
+PRAGMA_OPTIMIZATION_FORCE_END
 
 task_id_t task_create(task_main_t task, char const * p_task_name, void *p_context)
 {
@@ -531,3 +535,9 @@ NRF_CLI_CREATE_STATIC_SUBCMD_SET(m_sub_task_mngr)
 
 NRF_CLI_CMD_REGISTER(task_manager, &m_sub_task_mngr, "commands for task manager", NULL);
 #endif //TASK_MANAGER_CLI_CMDS
+#else //TASK_MANAGER_ENABLED
+void *task_schedule(void *p_stack)
+{
+    return (void *)0;
+}
+#endif //TASK_MANAGER_ENABLED

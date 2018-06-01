@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2015 - 2017, Nordic Semiconductor ASA
+ * Copyright (c) 2015 - 2018, Nordic Semiconductor ASA
  * 
  * All rights reserved.
  * 
@@ -82,6 +82,7 @@ static nrf_pwm_sequence_t const    m_demo1_seq =
     .repeats             = 0,
     .end_delay           = 0
 };
+
 static void demo1_handler(nrf_drv_pwm_evt_type_t event_type)
 {
     if (event_type == NRF_DRV_PWM_EVT_FINISHED)
@@ -496,8 +497,6 @@ static void demo5(void)
 }
 
 
-
-
 static void bsp_evt_handler(bsp_event_t evt)
 {
     void (* const demos[])(void) =
@@ -570,10 +569,6 @@ static void init_bsp()
 
 void app_error_fault_handler(uint32_t id, uint32_t pc, uint32_t info)
 {
-    #ifdef DEBUG
-    app_error_print(id, pc, info);
-    #endif
-
     bsp_board_leds_on();
     app_error_save_and_stop(id, pc, info);
 }
@@ -581,12 +576,12 @@ void app_error_fault_handler(uint32_t id, uint32_t pc, uint32_t info)
 
 int main(void)
 {
-    init_bsp();
-
     APP_ERROR_CHECK(NRF_LOG_INIT(NULL));
     NRF_LOG_DEFAULT_BACKENDS_INIT();
 
-    NRF_LOG_INFO("PWM example");
+    init_bsp();
+
+    NRF_LOG_INFO("PWM example started.");
 
     // Start with Demo 1, then switch to another one when the user presses
     // button 1 or button 2 (see the 'bsp_evt_handler' function).

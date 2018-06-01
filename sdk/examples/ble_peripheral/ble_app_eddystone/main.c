@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2016 - 2017, Nordic Semiconductor ASA
+ * Copyright (c) 2016 - 2018, Nordic Semiconductor ASA
  * 
  * All rights reserved.
  * 
@@ -61,6 +61,7 @@
 #include "app_scheduler.h"
 #include "nrf_ble_es.h"
 #include "nrf_ble_gatt.h"
+#include "nrf_pwr_mgmt.h"
 
 
 #define DEAD_BEEF                       0xDEADBEEF          //!< Value used as error code on stack dump, can be used to identify stack location on stack unwind.
@@ -71,11 +72,10 @@
 /**@brief   Priority of the application BLE event handler.
  * @note    You shouldn't need to modify this value.
  */
-#define APP_BLE_OBSERVER_PRIO           1
+#define APP_BLE_OBSERVER_PRIO 3
 
 
-NRF_BLE_GATT_DEF(m_gatt);                                   //!< GATT module instance.
-
+NRF_BLE_GATT_DEF(m_gatt); //!< GATT module instance.
 
 /**@brief Callback function for asserts in the SoftDevice.
  *
@@ -126,10 +126,9 @@ static void ble_evt_handler(ble_evt_t const * p_ble_evt, void * p_context)
             break;
 
         case BLE_GAP_EVT_DISCONNECTED:
-            bsp_board_led_off(CONNECTED_LED_PIN);
+            // LED indication will be changed when advertising starts.
             break;
 
-#if defined(S132)
         case BLE_GAP_EVT_PHY_UPDATE_REQUEST:
         {
             ble_gap_phys_t const phys =
@@ -140,7 +139,6 @@ static void ble_evt_handler(ble_evt_t const * p_ble_evt, void * p_context)
             err_code = sd_ble_gap_phy_update(p_ble_evt->evt.gap_evt.conn_handle, &phys);
             APP_ERROR_CHECK(err_code);
         } break;
-#endif
 
         default:
             // No implementation needed.
@@ -211,8 +209,10 @@ static void ble_stack_init(void)
     // Configure the maximum number of connections.
     memset(&ble_cfg, 0, sizeof(ble_cfg));
     ble_cfg.gap_cfg.role_count_cfg.periph_role_count  = 1;
+#if !defined (S112)
     ble_cfg.gap_cfg.role_count_cfg.central_role_count = 0;
     ble_cfg.gap_cfg.role_count_cfg.central_sec_count  = 0;
+#endif // !defined (S112)
     err_code = sd_ble_cfg_set(BLE_GAP_CFG_ROLE_COUNT, &ble_cfg, ram_start);
     APP_ERROR_CHECK(err_code);
 
@@ -247,12 +247,24 @@ static void conn_params_init(void)
 }
 
 
-/**@brief Function for doing power management.
+/**@brief Function for initializing power management.
  */
-static void power_manage(void)
+static void power_management_init(void)
 {
-    ret_code_t err_code = sd_app_evt_wait();
+    ret_code_t err_code;
+    err_code = nrf_pwr_mgmt_init();
     APP_ERROR_CHECK(err_code);
+}
+
+
+/**@brief Function for handling the idle state (main loop).
+ *
+ * @details If there is no pending log operation, then sleep until next the next event occurs.
+ */
+static void idle_state_handle(void)
+{
+    app_sched_execute();
+    nrf_pwr_mgmt_run();
 }
 
 
@@ -270,6 +282,10 @@ static void on_es_evt(nrf_ble_es_evt_t evt)
 
         case NRF_BLE_ES_EVT_CONNECTABLE_ADV_STARTED:
             bsp_board_led_on(CONNECTABLE_ADV_LED_PIN);
+            break;
+
+        case NRF_BLE_ES_EVT_CONNECTABLE_ADV_STOPPED:
+            bsp_board_led_off(CONNECTABLE_ADV_LED_PIN);
             break;
 
         default:
@@ -327,7 +343,7 @@ static void timers_init(void)
 
 static void leds_init(void)
 {
-    ret_code_t err_code = bsp_init(BSP_INIT_LED, NULL);
+    ret_code_t err_code = bsp_init(BSP_INIT_LEDS, NULL);
     APP_ERROR_CHECK(err_code);
 }
 
@@ -348,6 +364,7 @@ int main(void)
     leds_init();
     button_init();
     scheduler_init();
+    power_management_init();
     ble_stack_init();
     gap_params_init();
     gatt_init();
@@ -357,8 +374,7 @@ int main(void)
     // Enter main loop.
     for (;;)
     {
-        app_sched_execute();
-        power_manage();
+        idle_state_handle();
     }
 }
 

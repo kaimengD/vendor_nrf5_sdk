@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2016 - 2017, Nordic Semiconductor ASA
+ * Copyright (c) 2016 - 2018, Nordic Semiconductor ASA
  * 
  * All rights reserved.
  * 
@@ -49,7 +49,6 @@
 #include "ble_db_discovery.h"
 #include "ble_hrs_c.h"
 #include "ble_bas_c.h"
-#include "nfc_ble_oob_advdata_parser.h"
 #include "nrf_ble_gatt.h"
 
 #define NRF_LOG_MODULE_NAME BLE_M
@@ -57,7 +56,7 @@
 NRF_LOG_MODULE_REGISTER();
 
 #define APP_BLE_CONN_CFG_TAG        1                                   /**< A tag for a configuration of the BLE stack. */
-#define APP_BLE_OBSERVER_PRIO       1                                   /**< Applications' BLE observer priority. You shoulnd't need to modify this value. */
+#define APP_BLE_OBSERVER_PRIO       3                                   /**< Applications' BLE observer priority. You shoulnd't need to modify this value. */
 #define APP_SOC_OBSERVER_PRIO       1                                   /**< Applications' SoC observer priority. You shoulnd't need to modify this value. */
 
 #define MIN_CONNECTION_INTERVAL     MSEC_TO_UNITS(7.5, UNIT_1_25_MS)    /**< Determines minimum connection interval in milliseconds. */
@@ -69,14 +68,8 @@ NRF_LOG_MODULE_REGISTER();
 #define SCAN_WINDOW                 0x0050                              /**< Determines scan window in units of 0.625 millisecond. */
 #define SCAN_TIMEOUT                0x0000                              /**< Timout when scanning. 0x0000 disables the time-out. */
 
-
-/**@brief Variable length data encapsulation in terms of length and pointer to data. */
-typedef struct
-{
-    uint8_t * p_data;   /**< Pointer to data. */
-    uint16_t  data_len; /**< Length of data. */
-} data_t;
-
+#define DEV_NAME_LEN                ((BLE_GAP_ADV_SET_DATA_SIZE_MAX + 1) - \
+                                    AD_DATA_OFFSET)                     /**< Determines device name length. */
 
 BLE_HRS_C_DEF(m_hrs_c);                                                 /**< Heart rate service client module instance. */
 BLE_BAS_C_DEF(m_bas_c);                                                 /**< Battery Service client module instance. */
@@ -103,13 +96,15 @@ static ble_gap_conn_params_t const m_connection_param =
     .interval = SCAN_INTERVAL,
     .window   = SCAN_WINDOW,
     .timeout  = SCAN_TIMEOUT,
-    #if (NRF_SD_BLE_API_VERSION == 2)
-        .selective   = 0,
-        .p_whitelist = NULL,
-    #endif
-    #if (NRF_SD_BLE_API_VERSION == 3)
-        .use_whitelist = 0,
-    #endif
+};
+
+static uint8_t m_scan_buffer_data[BLE_GAP_SCAN_BUFFER_MIN]; /**< buffer where advertising reports will be stored by the SoftDevice. */
+
+/**@brief Pointer to the buffer where advertising reports will be stored by the SoftDevice. */
+static ble_data_t m_scan_buffer =
+{
+    m_scan_buffer_data,
+    BLE_GAP_SCAN_BUFFER_MIN
 };
 
 
@@ -147,7 +142,10 @@ void ble_disconnect(void)
     if (m_is_connected)
     {
         err_code = sd_ble_gap_disconnect(m_conn_handle, BLE_HCI_REMOTE_USER_TERMINATED_CONNECTION);
-        APP_ERROR_CHECK(err_code);
+        if (err_code != NRF_ERROR_INVALID_STATE)
+        {
+            APP_ERROR_CHECK(err_code);
+        }
     }
 }
 
@@ -171,62 +169,71 @@ void scan_start(void)
         APP_ERROR_CHECK(err_code);
     }
 
-    err_code = sd_ble_gap_scan_start(&m_scan_params);
+    err_code = sd_ble_gap_scan_start(&m_scan_params, &m_scan_buffer);
     APP_ERROR_CHECK(err_code);
 }
 
 
 /**@brief Function for handling the advertising report BLE event.
  *
- * @param[in] p_ble_evt  Bluetooth stack event.
+ * @param[in] p_adv_report  Advertising report from the SoftDevice.
  */
-static void on_adv_report(const ble_evt_t * const p_ble_evt)
+static void on_adv_report(ble_gap_evt_adv_report_t const * p_adv_report)
 {
     ret_code_t  err_code;
     uint8_t   * p_adv_data;
-    uint8_t     data_len;
-    uint8_t   * dev_name;
-
-    // For readability.
-    ble_gap_evt_t  const * p_gap_evt  = &p_ble_evt->evt.gap_evt;
-    ble_gap_addr_t const * peer_addr  = &p_gap_evt->params.adv_report.peer_addr;
+    uint16_t    data_len;
+    uint16_t    field_len;
+    uint16_t    dev_name_offset = 0;
+    char        dev_name[DEV_NAME_LEN];
 
     // Initialize advertisement report for parsing.
-    p_adv_data = (uint8_t *)p_gap_evt->params.adv_report.data;
-    data_len   = p_gap_evt->params.adv_report.dlen;
+    p_adv_data = (uint8_t *)p_adv_report->data.p_data;
+    data_len   = p_adv_report->data.len;
 
     // Search for advertising names.
-    err_code = nfc_ble_oob_advdata_parser_field_find(BLE_GAP_AD_TYPE_COMPLETE_LOCAL_NAME,
-                                                     p_adv_data,
-                                                     &data_len,
-                                                     &dev_name);
-    if (err_code != NRF_SUCCESS)
+    field_len = ble_advdata_search(p_adv_data, 
+                                   data_len, 
+                                   &dev_name_offset, 
+                                   BLE_GAP_AD_TYPE_COMPLETE_LOCAL_NAME);
+    if (field_len == 0)
     {
         // Look for the short local name if it was not found as complete.
-        err_code = nfc_ble_oob_advdata_parser_field_find(BLE_GAP_AD_TYPE_SHORT_LOCAL_NAME,
-                                                         p_adv_data,
-                                                         &data_len,
-                                                         &dev_name);
-        if (err_code != NRF_SUCCESS)
+        field_len = ble_advdata_search(p_adv_data, 
+                                       data_len,
+                                       &dev_name_offset,
+                                       BLE_GAP_AD_TYPE_SHORT_LOCAL_NAME);
+        if (field_len == 0)
         {
-            // If data cannot be parsed, then exit.
+            // If we can't parse the data, then exit.
+            err_code = sd_ble_gap_scan_start(NULL, &m_scan_buffer);
+            APP_ERROR_CHECK(err_code);
+
             return;
         }
     }
 
-    NRF_LOG_DEBUG("Found advertising device name: %s", nrf_log_push((char *)dev_name));
+    memcpy(dev_name, &p_adv_data[dev_name_offset], field_len);
+    dev_name[field_len] = 0;
+
+    NRF_LOG_DEBUG("Found advertising device: %s", nrf_log_push((char *)dev_name));
 
     // Check if the device address is the same as address taken from the NFC tag.
-    if (nfc_oob_pairing_tag_match(peer_addr))
+    if (nfc_oob_pairing_tag_match(&p_adv_report->peer_addr))
     {
         // If the address is correct, stop scanning and initiate a connection with the peripheral device.
         err_code = sd_ble_gap_scan_stop();
         APP_ERROR_CHECK(err_code);
 
-        err_code = sd_ble_gap_connect(peer_addr,
+        err_code = sd_ble_gap_connect(&p_adv_report->peer_addr,
                                       &m_scan_params,
-                                      &m_connection_param,
+                                      &m_connection_param, 
                                       APP_BLE_CONN_CFG_TAG);
+        APP_ERROR_CHECK(err_code);
+    }
+    else
+    {
+        err_code = sd_ble_gap_scan_start(NULL, &m_scan_buffer);
         APP_ERROR_CHECK(err_code);
     }
 }
@@ -264,11 +271,10 @@ static void ble_evt_handler(ble_evt_t const * p_ble_evt, void * p_context)
             m_conn_handle  = BLE_CONN_HANDLE_INVALID;
             m_is_connected = false;
             nfc_oob_pairing_tag_invalidate();
-            memset(&m_db_discovery, 0 , sizeof (m_db_discovery));
             break;
 
         case BLE_GAP_EVT_ADV_REPORT:
-            on_adv_report(p_ble_evt);
+            on_adv_report(&p_gap_evt->params.adv_report);
             break;
 
         case BLE_GAP_EVT_TIMEOUT:
@@ -290,7 +296,6 @@ static void ble_evt_handler(ble_evt_t const * p_ble_evt, void * p_context)
             APP_ERROR_CHECK(err_code);
             break;
 
-#if defined(S132)
         case BLE_GAP_EVT_PHY_UPDATE_REQUEST:
         {
             NRF_LOG_DEBUG("PHY update request.");
@@ -302,7 +307,6 @@ static void ble_evt_handler(ble_evt_t const * p_ble_evt, void * p_context)
             err_code = sd_ble_gap_phy_update(p_ble_evt->evt.gap_evt.conn_handle, &phys);
             APP_ERROR_CHECK(err_code);
         } break;
-#endif
 
         case BLE_GATTC_EVT_TIMEOUT:
             // Disconnect on GATT Client timeout event.
@@ -335,8 +339,21 @@ static void ble_evt_handler(ble_evt_t const * p_ble_evt, void * p_context)
 
         case BLE_GAP_EVT_CONN_SEC_UPDATE:
             NRF_LOG_INFO("BLE_GAP_EVT_CONN_SEC_UPDATE");
-            NRF_LOG_INFO("Security mode: %u",
+            NRF_LOG_INFO("Security mode: %u. Security level: %u",
+                         p_ble_evt->evt.gap_evt.params.conn_sec_update.conn_sec.sec_mode.sm,
                          p_ble_evt->evt.gap_evt.params.conn_sec_update.conn_sec.sec_mode.lv);
+            if (p_ble_evt->evt.gap_evt.params.conn_sec_update.conn_sec.sec_mode.lv >= SECURITY_LEVEL_THR)
+            {
+                NRF_LOG_INFO("Security level high enough to enable HRS notifications.");
+
+                // Enable notifications of Heart Rate Measurement.
+                err_code = ble_hrs_c_hrm_notif_enable(&m_hrs_c);
+                APP_ERROR_CHECK(err_code);
+            }
+            else
+            {
+                NRF_LOG_INFO("Security level too low to enable HRS notifications.");
+            }
             break;
 
         default:
@@ -396,10 +413,6 @@ static void hrs_c_evt_handler(ble_hrs_c_t * p_hrs_c, ble_hrs_c_evt_t * p_hrs_c_e
                 APP_ERROR_CHECK(err_code);
             }
 
-            // Heart rate service discovered. Enable notification of Heart Rate Measurement.
-            err_code = ble_hrs_c_hrm_notif_enable(p_hrs_c);
-            APP_ERROR_CHECK(err_code);
-
             NRF_LOG_DEBUG("Heart rate service discovered ");
             break;
 
@@ -429,13 +442,6 @@ static void bas_c_evt_handler(ble_bas_c_t * p_bas_c, ble_bas_c_evt_t * p_bas_c_e
                                                 p_bas_c_evt->conn_handle,
                                                 &p_bas_c_evt->params.bas_db);
             APP_ERROR_CHECK(err_code);
-
-            // Initiate bonding.
-            err_code = pm_conn_secure(p_bas_c_evt->conn_handle, false);
-            if (err_code != NRF_ERROR_INVALID_STATE)
-            {
-                APP_ERROR_CHECK(err_code);
-            }
 
             // Batttery service discovered. Enable notification of Battery Level.
             NRF_LOG_DEBUG("Battery Service discovered. Reading battery level.");

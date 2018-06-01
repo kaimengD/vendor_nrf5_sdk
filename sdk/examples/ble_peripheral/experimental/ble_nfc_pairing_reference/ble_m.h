@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2016 - 2017, Nordic Semiconductor ASA
+ * Copyright (c) 2016 - 2018, Nordic Semiconductor ASA
  * 
  * All rights reserved.
  * 
@@ -79,6 +79,11 @@ void gap_params_init(void);
 void gatt_init(void);
 
 
+/**@brief Function for initializing the Queued Write module.
+ */
+void qwr_init(void);
+
+
 /**@brief Function for terminating the BLE connection. */
 void ble_disconnect(void);
 
@@ -90,7 +95,7 @@ void ble_disconnect(void);
 void ble_set_device_name(char const * device_name);
 
 
-/**@breif Function for getting the advertising module instance.
+/**@brief Function for getting the advertising module instance.
  *
  * @return Pointer to the advertising module instance.
  */

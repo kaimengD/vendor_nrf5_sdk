@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2012 - 2017, Nordic Semiconductor ASA
+ * Copyright (c) 2012 - 2018, Nordic Semiconductor ASA
  * 
  * All rights reserved.
  * 
@@ -75,7 +75,7 @@ uint32_t bluetooth_init(void)
 }
 
 // Generic handler function for ble events will call each service's individual on_ble_evt function
-void bluetooth_on_ble_evt(ble_evt_t * p_ble_evt)
+void bluetooth_on_ble_evt(ble_evt_t const * p_ble_evt)
 {
 
 }

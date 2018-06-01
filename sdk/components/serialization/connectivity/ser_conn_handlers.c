@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2014 - 2017, Nordic Semiconductor ASA
+ * Copyright (c) 2014 - 2018, Nordic Semiconductor ASA
  * 
  * All rights reserved.
  * 
@@ -46,7 +46,9 @@
 #include "ser_conn_pkt_decoder.h"
 #include "ser_conn_dtm_cmd_decoder.h"
 #include "nrf_sdh.h"
-
+#ifdef BLE_STACK_SUPPORT_REQD
+#include "conn_ble_gap_sec_keys.h"
+#endif
 
 /** @file
  *
@@ -66,7 +68,20 @@ static ser_hal_transport_evt_rx_pkt_received_params_t m_rx_pkt_received_params;
 /** Indicator of received packet that should be process. */
 static bool m_rx_pkt_to_process = false;
 
+static ser_conn_on_no_mem_t m_on_no_mem_handler;
 
+void ser_conn_on_no_mem_handler_set(ser_conn_on_no_mem_t handler)
+{
+    m_on_no_mem_handler = handler;
+}
+
+void ser_conn_on_no_mem_handler(void)
+{
+    if (m_on_no_mem_handler)
+    {
+        m_on_no_mem_handler();
+    }
+}
 void ser_conn_hal_transport_event_handle(ser_hal_transport_evt_t event)
 {
     switch (event.evt_type)
@@ -152,7 +167,7 @@ void ser_conn_ble_event_handle(ble_evt_t const * p_ble_evt, void * p_context)
      * encoding and sending every BLE event because sending a response on received packet has higher
      * priority than sending a BLE event. Solution for that is to put BLE events into application
      * scheduler queue to be processed at a later time. */
-    err_code = app_sched_event_put((ble_evt_t*)p_ble_evt, sizeof (ble_evt_hdr_t) + p_ble_evt->header.evt_len,
+    err_code = app_sched_event_put(p_ble_evt, p_ble_evt->header.evt_len,
                                    ser_conn_ble_event_encoder);
     APP_ERROR_CHECK(err_code);
     uint16_t free_space = app_sched_queue_space_get();

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2016 - 2017, Nordic Semiconductor ASA
+ * Copyright (c) 2016 - 2018, Nordic Semiconductor ASA
  * 
  * All rights reserved.
  * 
@@ -56,7 +56,7 @@ extern "C" {
 #define GAZELLE_ERROR_CODE_CHECK(GZLL_RESULT)                                       \
     do                                                                              \
     {                                                                               \
-        if ((GZLL_RESULT) == false)                                                  \
+        if ((GZLL_RESULT) == false)                                                 \
         {                                                                           \
             nrf_gzll_error_code_t gzll_error_code = nrf_gzll_get_error_code();      \
             ret_code_t error_code = gzll_error_code + NRF_ERROR_GAZELLE_ERR_BASE;   \

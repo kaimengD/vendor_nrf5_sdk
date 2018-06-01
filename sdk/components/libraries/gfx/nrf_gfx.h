@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2017 - 2017, Nordic Semiconductor ASA
+ * Copyright (c) 2017 - 2018, Nordic Semiconductor ASA
  * 
  * All rights reserved.
  * 
@@ -60,7 +60,7 @@
  * @ingroup app_common
  *
  * @brief Module for drawing graphical objects like lines, circles, and rectangles.
-	Provides support for different fonts.
+    Provides support for different fonts.
  */
 
 /**

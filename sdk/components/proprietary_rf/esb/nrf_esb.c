@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2016 - 2017, Nordic Semiconductor ASA
+ * Copyright (c) 2016 - 2018, Nordic Semiconductor ASA
  * 
  * All rights reserved.
  * 
@@ -153,7 +153,7 @@ static nrf_esb_payload_t          * mp_current_payload;
 static nrf_esb_event_handler_t      m_event_handler;
 
 // Address parameters
-static nrf_esb_address_t            m_esb_addr = NRF_ESB_ADDR_DEFAULT;
+__ALIGN(4) static nrf_esb_address_t m_esb_addr = NRF_ESB_ADDR_DEFAULT;
 
 // RF parameters
 static nrf_esb_config_t             m_config_local;

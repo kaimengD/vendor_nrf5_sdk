@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2017 - 2017, Nordic Semiconductor ASA
+ * Copyright (c) 2017 - 2018, Nordic Semiconductor ASA
  * 
  * All rights reserved.
  * 
@@ -131,6 +131,8 @@ ret_code_t nrf_ble_ots_c_indication_enable(nrf_ble_ots_c_t * const p_ots_c,
     ret_code_t err_code = NRF_SUCCESS;
 
     ble_gattc_write_params_t gattc_params;
+    
+    memset(&gattc_params, 0x00, sizeof(gattc_params));
     uint16_t cccd_val = (enable) ? BLE_GATT_HVX_INDICATION : 0;
 
     gattc_params.handle   = p_ots_c->service.object_action_cp_cccd.handle;

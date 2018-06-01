@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2014 - 2017, Nordic Semiconductor ASA
+ * Copyright (c) 2014 - 2018, Nordic Semiconductor ASA
  * 
  * All rights reserved.
  * 
@@ -153,7 +153,7 @@ void * nrf_realloc(void *p_buffer, uint32_t size);
 
 #ifdef MEM_MANAGER_ENABLE_DIAGNOSTICS
 
-/**@brief Function to print statstics related to memory blocks managed by memory manager.
+/**@brief Function to print statistics related to memory blocks managed by memory manager.
  *
  * @details This API prints information with respects to each block function, including size, total
  *          block count, number of blocks in use at the time of printing, smallest memory size

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2011 - 2017, Nordic Semiconductor ASA
+ * Copyright (c) 2011 - 2018, Nordic Semiconductor ASA
  * 
  * All rights reserved.
  * 
@@ -47,7 +47,7 @@
  */
 
 #ifndef BLE_L2CAP_CONN_H__
-#define BLE_L2CAP_CON__H__
+#define BLE_L2CAP_CONN_H__
 
 #include "ble.h"
 #include "ble_types.h"

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2015 - 2017, Nordic Semiconductor ASA
+ * Copyright (c) 2015 - 2018, Nordic Semiconductor ASA
  * 
  * All rights reserved.
  * 
@@ -366,7 +366,7 @@ int main(void)
 
     APP_ERROR_CHECK(NRF_LOG_INIT(NULL));
 
-    bsp_board_leds_init();
+    bsp_board_init(BSP_INIT_LEDS);
 
     err_code = clock_config();
     APP_ERROR_CHECK(err_code);
@@ -384,16 +384,16 @@ int main(void)
     err_code = nrf_cli_start(&m_cli_uart);
     APP_ERROR_CHECK(err_code);
 
-    NRF_LOG_RAW_INFO("Capacitive sensing driver example.\r\n");
+    NRF_LOG_RAW_INFO("Capacitive sensing driver example started. \r\n");
     csense_initialize();
-    NRF_LOG_RAW_INFO("Please execute \"configure\" command to set thresholds.\r\n"
-                     "New line character expected by console is \'\\r\'.\r\n");
+    NRF_LOG_RAW_INFO("Please execute: \"configure\" command to set thresholds.\r\n"
+                     "In order to see all available commands please press the Tab button.\r\n");
 
     start_app_timer();
 
     while (1)
     {
-        NRF_LOG_FLUSH();
+        UNUSED_RETURN_VALUE(NRF_LOG_PROCESS());
         nrf_cli_process(&m_cli_uart);
         configuration();
         __WFI();
@@ -418,6 +418,6 @@ static void configure_thresholds(nrf_cli_t const * p_cli, size_t argc, char **ar
     }
 }
 
-NRF_CLI_CMD_REGISTER(configure, NULL, NULL, configure_thresholds);
+NRF_CLI_CMD_REGISTER(configure, NULL, "Thresholds configuration command.", configure_thresholds);
 
 /** @} */

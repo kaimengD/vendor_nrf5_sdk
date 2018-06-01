@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2015 - 2017, Telit Communications Cyprus Ltd
+ * Copyright (c) 2015 - 2018, Telit Communications Cyprus Ltd
  * 
  * All rights reserved.
  * 
@@ -91,7 +91,11 @@ typedef enum
 
 typedef enum
 {
-    NFC_T2T_PARAM_TESTING       ///< Used for unit tests.
+    NFC_T2T_PARAM_TESTING,      ///< Used for unit tests.
+    NFC_T2T_PARAM_NFCID1,       /**< NFCID1 value, data can be 4, 7, or 10 bytes long (single, double, or triple size).
+                                     To use default NFCID1 of specific length pass one byte containing requested length.
+                                     Default 7-byte NFCID1 will be used if this parameter was not set. This parameter can be
+                                     set before nfc_t2t_setup() to set initial NFCID1 and it can be changed later. */
 } nfc_t2t_param_id_t;
 
 /** @brief Callback to pass events from NFC T2T Library to application.

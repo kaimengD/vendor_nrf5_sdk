@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2015 - 2017, Nordic Semiconductor ASA
+ * Copyright (c) 2015 - 2018, Nordic Semiconductor ASA
  * 
  * All rights reserved.
  * 
@@ -42,9 +42,9 @@
 
 /**@file
  *
- * @defgroup nfc_launch_app_rec Launch app records
+ * @defgroup nfc_launchapp_rec Launch app records
  * @{
- * @ingroup  nfc_launch_app_msg
+ * @ingroup  nfc_launchapp_msg
  *
  * @brief    Generation of NFC NDEF record descriptions that launch apps.
  *

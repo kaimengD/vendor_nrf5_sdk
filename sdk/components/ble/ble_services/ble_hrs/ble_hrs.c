@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2012 - 2017, Nordic Semiconductor ASA
+ * Copyright (c) 2012 - 2018, Nordic Semiconductor ASA
  * 
  * All rights reserved.
  * 
@@ -45,7 +45,6 @@
 #if NRF_MODULE_ENABLED(BLE_HRS)
 #include "ble_hrs.h"
 #include <string.h>
-#include "ble_l2cap.h"
 #include "ble_srv_common.h"
 
 

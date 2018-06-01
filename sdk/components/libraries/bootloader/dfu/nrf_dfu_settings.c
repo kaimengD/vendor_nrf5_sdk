@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2016 - 2017, Nordic Semiconductor ASA
+ * Copyright (c) 2016 - 2018, Nordic Semiconductor ASA
  * 
  * All rights reserved.
  * 
@@ -43,20 +43,15 @@
 #include <string.h>
 #include "app_error.h"
 #include "nrf_dfu_flash.h"
-#include "nrf_dfu_svci.h"
 #include "nrf_soc.h"
 #include "crc32.h"
 #include "nrf_nvmc.h"
 
+#define DFU_SETTINGS_INIT_COMMAND_OFFSET        offsetof(nrf_dfu_settings_t, init_command)          //<! Offset in the settings struct where the InitCommand is located.
 
 #define NRF_LOG_MODULE_NAME nrf_dfu_settings
 #include "nrf_log.h"
 NRF_LOG_MODULE_REGISTER();
-
-
-#define DFU_SETTINGS_INIT_COMMAND_OFFSET        offsetof(nrf_dfu_settings_t, init_command)          //<! Offset in the settings struct where the InitCommand is located.
-#define DFU_SETTINGS_PEER_DATA_OFFSET           offsetof(nrf_dfu_settings_t, peer_data)             //<! Offset in the settings struct where the additional peer data is located.
-#define DFU_SETTINGS_ADV_NAME_OFFSET            offsetof(nrf_dfu_settings_t, adv_name)              //<! Offset in the settings struct where the additional advertisement name is located.
 
 
 /**@brief   This variable reserves a page in flash for bootloader settings
@@ -64,19 +59,19 @@ NRF_LOG_MODULE_REGISTER();
  */
 #if defined (__CC_ARM )
 
-    uint8_t m_dfu_settings_buffer[CODE_PAGE_SIZE]
+    uint8_t m_dfu_settings_buffer[BOOTLOADER_SETTINGS_PAGE_SIZE]
         __attribute__((at(BOOTLOADER_SETTINGS_ADDRESS)))
         __attribute__((used));
 
-#elif defined ( __GNUC__ )
+#elif defined ( __GNUC__ ) || defined ( __SES_ARM )
 
-    uint8_t m_dfu_settings_buffer[CODE_PAGE_SIZE]
-        __attribute__((section(".bootloaderSettings")))
+    uint8_t m_dfu_settings_buffer[BOOTLOADER_SETTINGS_PAGE_SIZE]
+        __attribute__((section(".bootloader_settings_page")))
         __attribute__((used));
 
 #elif defined ( __ICCARM__ )
 
-    __no_init __root uint8_t m_dfu_settings_buffer[CODE_PAGE_SIZE]
+    __no_init __root uint8_t m_dfu_settings_buffer[BOOTLOADER_SETTINGS_PAGE_SIZE]
         @ BOOTLOADER_SETTINGS_ADDRESS;
 
 #else
@@ -93,18 +88,18 @@ NRF_LOG_MODULE_REGISTER();
  */
 #if defined ( __CC_ARM )
 
-    uint8_t m_mbr_params_page[CODE_PAGE_SIZE]
+    uint8_t m_mbr_params_page[NRF_MBR_PARAMS_PAGE_SIZE]
         __attribute__((at(NRF_MBR_PARAMS_PAGE_ADDRESS)))
         __attribute__((used));
 
-#elif defined ( __GNUC__ )
+#elif defined ( __GNUC__ ) || defined ( __SES_ARM )
 
-    uint8_t m_mbr_params_page[CODE_PAGE_SIZE]
-        __attribute__ ((section(".mbrParamsPage")));
+    uint8_t m_mbr_params_page[NRF_MBR_PARAMS_PAGE_SIZE]
+        __attribute__ ((section(".mbr_params_page")));
 
 #elif defined ( __ICCARM__ )
 
-    __no_init uint8_t m_mbr_params_page[CODE_PAGE_SIZE]
+    __no_init uint8_t m_mbr_params_page[NRF_MBR_PARAMS_PAGE_SIZE]
         @ NRF_MBR_PARAMS_PAGE_ADDRESS;
 
 #else
@@ -123,10 +118,10 @@ NRF_LOG_MODULE_REGISTER();
     uint32_t const m_uicr_mbr_params_page_address
         __attribute__((at(NRF_UICR_MBR_PARAMS_PAGE_ADDRESS))) = NRF_MBR_PARAMS_PAGE_ADDRESS;
 
-#elif defined ( __GNUC__ )
+#elif defined ( __GNUC__ ) || defined ( __SES_ARM )
 
     uint32_t const m_uicr_mbr_params_page_address
-        __attribute__ ((section(".uicrMbrParamsPageAddress")))
+        __attribute__ ((section(".uicr_mbr_params_page")))
         __attribute__ ((used)) = NRF_MBR_PARAMS_PAGE_ADDRESS;
 
 #elif defined ( __ICCARM__ )
@@ -153,16 +148,15 @@ static uint32_t nrf_dfu_settings_crc_get(void)
 }
 
 
-void nrf_dfu_settings_init(bool sd_irq_initialized)
+ret_code_t nrf_dfu_settings_init(bool sd_irq_initialized)
 {
-    NRF_LOG_DEBUG("Running nrf_dfu_settings_init(sd_irq_initialized=%s).",
-                  sd_irq_initialized ? (uint32_t)"true" : (uint32_t)"false");
+    NRF_LOG_DEBUG("Calling nrf_dfu_settings_init()...");
 
     ret_code_t rc = nrf_dfu_flash_init(sd_irq_initialized);
     if (rc != NRF_SUCCESS)
     {
         NRF_LOG_ERROR("nrf_dfu_flash_init() failed with error: %x", rc);
-        APP_ERROR_HANDLER(rc);
+        return NRF_ERROR_INTERNAL;
     }
 
     // Copy the DFU settings out of flash and into a buffer in RAM.
@@ -174,7 +168,7 @@ void nrf_dfu_settings_init(bool sd_irq_initialized)
         uint32_t crc = nrf_dfu_settings_crc_get();
         if (crc == s_dfu_settings.crc)
         {
-            return;
+            return NRF_SUCCESS;
         }
     }
 
@@ -188,14 +182,26 @@ void nrf_dfu_settings_init(bool sd_irq_initialized)
     if (rc != NRF_SUCCESS)
     {
         NRF_LOG_ERROR("nrf_dfu_flash_write() failed with error: %x", rc);
-        APP_ERROR_HANDLER(rc);
+        return NRF_ERROR_INTERNAL;
     }
+    return NRF_SUCCESS;
 }
 
 
-ret_code_t nrf_dfu_settings_write(dfu_flash_callback_t callback)
+ret_code_t nrf_dfu_settings_write(nrf_dfu_flash_callback_t callback)
 {
     ret_code_t err_code;
+
+    if (memcmp(&s_dfu_settings, m_dfu_settings_buffer, sizeof(nrf_dfu_settings_t)) == 0)
+    {
+        NRF_LOG_DEBUG("New settings are identical to old, write not needed. Skipping.");
+        if (callback != NULL)
+        {
+            callback(NULL);
+        }
+        return NRF_SUCCESS;
+    }
+
     NRF_LOG_DEBUG("Writing settings...");
     NRF_LOG_DEBUG("Erasing old settings at: 0x%08x", (uint32_t)m_dfu_settings_buffer);
 
@@ -228,129 +234,8 @@ ret_code_t nrf_dfu_settings_write(dfu_flash_callback_t callback)
     return NRF_SUCCESS;
 }
 
-
-#if defined(NRF_DFU_BLE_REQUIRES_BONDS) && (NRF_DFU_BLE_REQUIRES_BONDS == 1)
-
-ret_code_t nrf_dfu_settings_peer_data_write(nrf_dfu_peer_data_t * p_data)
+__WEAK ret_code_t nrf_dfu_settings_additional_erase(void)
 {
-    uint32_t        ret_val;
-
-    uint32_t *      p_peer_data_settings =
-        (uint32_t*) &m_dfu_settings_buffer[DFU_SETTINGS_PEER_DATA_OFFSET];
-
-    uint32_t crc = (uint32_t)*p_peer_data_settings;
-
-    VERIFY_PARAM_NOT_NULL(p_data);
-
-    if (crc != 0xFFFFFFFF)
-    {
-        // Already written to, must be cleared out
-        // Reset required.
-        return NRF_ERROR_INVALID_STATE;
-    }
-
-    // Calculate the CRC for the structure excluding the CRC value itself.
-    p_data->crc = crc32_compute((uint8_t*)p_data + 4, sizeof(nrf_dfu_peer_data_t) - 4, NULL);
-
-    // Using SoftDevice call since this function cannot use static memory.
-    ret_val = sd_flash_write(p_peer_data_settings,
-                             (uint32_t*)p_data,
-                             sizeof(nrf_dfu_peer_data_t)/4);
-
-    return ret_val;
-}
-
-
-ret_code_t nrf_dfu_settings_peer_data_copy(nrf_dfu_peer_data_t * p_data)
-{
-    VERIFY_PARAM_NOT_NULL(p_data);
-
-    memcpy(p_data, &m_dfu_settings_buffer[DFU_SETTINGS_PEER_DATA_OFFSET], sizeof(nrf_dfu_peer_data_t));
-
+    NRF_LOG_WARNING("No additional data erased");
     return NRF_SUCCESS;
 }
-
-
-bool nrf_dfu_settings_peer_data_is_valid(void)
-{
-    nrf_dfu_peer_data_t * p_peer_data =
-        (nrf_dfu_peer_data_t*) &m_dfu_settings_buffer[DFU_SETTINGS_PEER_DATA_OFFSET];
-
-    // Calculate the CRC for the structure excluding the CRC value itself.
-    uint32_t crc = crc32_compute((uint8_t*)p_peer_data + 4, sizeof(nrf_dfu_peer_data_t) - 4, NULL);
-
-    return (p_peer_data->crc == crc);
-}
-
-#else // not NRF_DFU_BLE_REQUIRES_BONDS
-
-ret_code_t nrf_dfu_settings_adv_name_write(nrf_dfu_adv_name_t * p_adv_name)
-{
-    uint32_t        ret_val;
-
-    uint32_t * p_adv_name_settings =
-        (uint32_t*) &m_dfu_settings_buffer[DFU_SETTINGS_ADV_NAME_OFFSET];
-
-    uint32_t crc = (uint32_t)*p_adv_name_settings;
-
-    VERIFY_PARAM_NOT_NULL(p_adv_name);
-
-    if (crc != 0xFFFFFFFF)
-    {
-        // Already written to, must be cleared out.
-        // Reset required
-        return NRF_ERROR_INVALID_STATE;
-    }
-
-    // Calculate the CRC for the structure excluding the CRC value itself.
-    p_adv_name->crc = crc32_compute((uint8_t *)p_adv_name + 4, sizeof(nrf_dfu_adv_name_t) - 4, NULL);
-
-    // Using SoftDevice call since this function cannot use static memory.
-    ret_val = sd_flash_write(p_adv_name_settings,
-                             (uint32_t*) p_adv_name,
-                             sizeof(nrf_dfu_adv_name_t)/4);
-    return ret_val;
-}
-
-
-ret_code_t nrf_dfu_settings_adv_name_copy(nrf_dfu_adv_name_t * p_adv_name)
-{
-    VERIFY_PARAM_NOT_NULL(p_adv_name);
-    memcpy(p_adv_name, &m_dfu_settings_buffer[DFU_SETTINGS_ADV_NAME_OFFSET], sizeof(nrf_dfu_adv_name_t));
-
-    return NRF_SUCCESS;
-}
-
-
-bool nrf_dfu_settings_adv_name_is_valid(void)
-{
-    nrf_dfu_adv_name_t * p_adv_name =
-        (nrf_dfu_adv_name_t*)&m_dfu_settings_buffer[DFU_SETTINGS_ADV_NAME_OFFSET];
-
-    // Calculate the CRC for the structure excluding the CRC value itself.
-    uint32_t crc = crc32_compute((uint8_t*)p_adv_name + 4, sizeof(nrf_dfu_adv_name_t) - 4, NULL);
-
-    return (p_adv_name->crc == crc);
-}
-
-#endif
-
-
-ret_code_t nrf_dfu_settings_additional_erase(void)
-{
-    ret_code_t ret_code = NRF_SUCCESS;
-
-    // Check CRC for both types.
-    if (   (s_dfu_settings.peer_data.crc != 0xFFFFFFFF)
-        || (s_dfu_settings.adv_name.crc  != 0xFFFFFFFF))
-    {
-        NRF_LOG_DEBUG("Erasing settings page additional data.");
-
-        // Erasing and resetting the settings page without the peer data/adv data
-        nrf_nvmc_page_erase(BOOTLOADER_SETTINGS_ADDRESS);
-        nrf_nvmc_write_words(BOOTLOADER_SETTINGS_ADDRESS, (uint32_t const *)&s_dfu_settings, DFU_SETTINGS_PEER_DATA_OFFSET / 4);
-    }
-
-    return ret_code;
-}
-

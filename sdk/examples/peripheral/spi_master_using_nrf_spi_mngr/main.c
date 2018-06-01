@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2017 - 2017, Nordic Semiconductor ASA
+ * Copyright (c) 2017 - 2018, Nordic Semiconductor ASA
  * 
  * All rights reserved.
  * 
@@ -84,12 +84,18 @@ APP_TIMER_DEF(m_timer);
  * is based on ST7565 driver. It has width = 128 pixels and height = 32 pixels */
 static lcd_cb_t m_lcd_cb =
 {
-    .state    = NRF_DRV_STATE_UNINITIALIZED,
+    .state    = NRFX_DRV_STATE_UNINITIALIZED,
     .height   = ST7565_LCD_HEIGHT,
     .width    = ST7565_LCD_WIDTH,
     .rotation = NRF_LCD_ROTATE_0
 };
 
+/* Dummy function. Rotation is not used in this example but such function is required
+ * by nrf_gfx module. */
+static void dummy_lcd_rotation_set(nrf_lcd_rotation_t rotation)
+{
+    UNUSED_PARAMETER(rotation);
+}
 
 /* Below functions are used by NRF GFX library. Rotation is not needed in this example. */
 static const nrf_lcd_t m_nrf_lcd =
@@ -99,7 +105,7 @@ static const nrf_lcd_t m_nrf_lcd =
     .lcd_pixel_draw = st7565_pixel_draw,
     .lcd_rect_draw = st7565_rect_draw,
     .lcd_display = st7565_display_screen,
-    .lcd_rotation_set = NULL,
+    .lcd_rotation_set = dummy_lcd_rotation_set,
     .lcd_display_invert = st7565_display_invert,
     .p_lcd_cb = &m_lcd_cb
 };
@@ -286,18 +292,18 @@ static void text_display(void)
 
 int main(void)
 {
+    APP_ERROR_CHECK(NRF_LOG_INIT(NULL));
+    NRF_LOG_DEFAULT_BACKENDS_INIT();
+
     lfclk_config();
     APP_ERROR_CHECK(app_timer_init());
     timer_interrupt_init();
     APP_ERROR_CHECK(nrf_pwr_mgmt_init());
-    APP_ERROR_CHECK(NRF_LOG_INIT(NULL));
-    NRF_LOG_DEFAULT_BACKENDS_INIT();
-
     APP_ERROR_CHECK(bsp_init(BSP_INIT_BUTTONS, bsp_event_handler));
-
-    NRF_LOG_INFO("SPI transaction manager example\n\r");
-
     APP_ERROR_CHECK(nrf_gfx_init(&m_nrf_lcd));
+
+    NRF_LOG_INFO("SPI transaction manager example started. \n\r");
+
     text_display();
 
     while (true)

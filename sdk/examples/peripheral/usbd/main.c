@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2016 - 2017, Nordic Semiconductor ASA
+ * Copyright (c) 2016 - 2018, Nordic Semiconductor ASA
  * 
  * All rights reserved.
  * 
@@ -52,6 +52,24 @@
 #include "app_timer.h"
 #include "app_error.h"
 #include "bsp.h"
+#include "bsp_cli.h"
+#include "nrf_cli.h"
+#include "nrf_cli_uart.h"
+
+/**
+ * @brief CLI interface over UART
+ */
+NRF_CLI_UART_DEF(m_cli_uart_transport, 0, 64, 16);
+NRF_CLI_DEF(m_cli_uart,
+            "uart_cli:~$ ",
+            &m_cli_uart_transport.transport,
+            '\r',
+            4);
+
+static bool m_send_flag = 0;
+
+#define BTN_DATA_SEND               0
+#define BTN_DATA_KEY_RELEASE        (bsp_event_t)(BSP_EVENT_KEY_LAST + 1)
 
 /**
  * @brief Button used to simulate mouse move
@@ -402,6 +420,44 @@ static volatile bool m_usbd_suspend_state_req = false;
  */
 static volatile bool m_system_off_req = false;
 
+
+/**
+ * @brief Setup all the endpoints for selected configuration
+ *
+ * Function sets all the endpoints for specific configuration.
+ *
+ * @note
+ * Setting the configuration index 0 means technically disabling the HID interface.
+ * Such configuration should be set when device is starting or USB reset is detected.
+ *
+ * @param index Configuration index
+ *
+ * @retval NRF_ERROR_INVALID_PARAM Invalid configuration
+ * @retval NRF_SUCCESS             Configuration successfully set
+ */
+static ret_code_t ep_configuration(uint8_t index)
+{
+    if ( index == 1 )
+    {
+        nrf_drv_usbd_ep_dtoggle_clear(NRF_DRV_USBD_EPIN1);
+        nrf_drv_usbd_ep_stall_clear(NRF_DRV_USBD_EPIN1);
+        nrf_drv_usbd_ep_enable(NRF_DRV_USBD_EPIN1);
+        m_usbd_configured = true;
+        nrf_drv_usbd_setup_clear();
+    }
+    else if ( index == 0 )
+    {
+        nrf_drv_usbd_ep_disable(NRF_DRV_USBD_EPIN1);
+        m_usbd_configured = false;
+        nrf_drv_usbd_setup_clear();
+    }
+    else
+    {
+        return NRF_ERROR_INVALID_PARAM;
+    }
+    return NRF_SUCCESS;
+}
+
 /**
  * @name Processing setup requests
  *
@@ -712,25 +768,13 @@ static void usbd_setup_SetConfig(nrf_drv_usbd_setup_t const * const p_setup)
     if ((p_setup->bmRequestType) == 0x00)
     {
         // accept only 0 and 1
-        if (((p_setup->wIndex) == 0) && ((p_setup->wLength) == 0))
+        if (((p_setup->wIndex) == 0) && ((p_setup->wLength) == 0) &&
+            ((p_setup->wValue) <= UINT8_MAX))
         {
-            if ( (p_setup->wValue) == 1 )
+            if (NRF_SUCCESS == ep_configuration((uint8_t)(p_setup->wValue)))
             {
-                nrf_drv_usbd_ep_enable(NRF_DRV_USBD_EPIN1);
-                m_usbd_configured = true;
                 nrf_drv_usbd_setup_clear();
                 return;
-            }
-            else if ( (p_setup->wValue) == 0 )
-            {
-                nrf_drv_usbd_ep_disable(NRF_DRV_USBD_EPIN1);
-                m_usbd_configured = false;
-                nrf_drv_usbd_setup_clear();
-                return;
-            }
-            else
-            {
-                // Wrong value
             }
         }
     }
@@ -793,8 +837,13 @@ static void usbd_event_handler(nrf_drv_usbd_evt_t const * const p_event)
         m_usbd_suspend_state_req = false;
         break;
     case NRF_DRV_USBD_EVT_RESET:
-        m_usbd_suspend_state_req = false;
-        break;
+        {
+            ret_code_t ret = ep_configuration(0);
+            ASSERT(ret == NRF_SUCCESS);
+            UNUSED_VARIABLE(ret);
+            m_usbd_suspend_state_req = false;
+            break;
+        }
     case NRF_DRV_USBD_EVT_SOF:
         {
             static uint32_t cycle = 0;
@@ -815,7 +864,11 @@ static void usbd_event_handler(nrf_drv_usbd_evt_t const * const p_event)
         {
             if (NRF_USBD_EP_OK == p_event->data.eptransfer.status)
             {
-                /* EPIN0 data transfers are cleared inside the USBD library */
+                if (!nrf_drv_usbd_errata_154())
+                {
+                    /* Transfer ok - allow status stage */
+                    nrf_drv_usbd_setup_clear();
+                }
             }
             else if (NRF_USBD_EP_ABORTED == p_event->data.eptransfer.status)
             {
@@ -1002,13 +1055,26 @@ static void power_usb_event_handler(nrf_drv_power_usb_evt_t event)
 
 static void bsp_evt_handler(bsp_event_t evt)
 {
-    switch (evt)
+    switch ((unsigned int)evt)
     {
     case BSP_EVENT_SYSOFF:
+    {
         m_system_off_req = true;
         break;
-    default:
+    }
+    case CONCAT_2(BSP_EVENT_KEY_, BTN_DATA_SEND):
+    {
+        m_send_flag = 1;
         break;
+    }
+    
+    case BTN_DATA_KEY_RELEASE:
+    {
+        m_send_flag = 0;
+        break;
+    }
+    default:
+        return;
     }
 }
 
@@ -1046,8 +1112,27 @@ static void init_bsp(void)
         BSP_BUTTON_ACTION_RELEASE,
         BSP_EVENT_SYSOFF);
     APP_ERROR_CHECK(ret);
+    ret = bsp_event_to_button_action_assign(BTN_DATA_SEND,
+                                            BSP_BUTTON_ACTION_RELEASE,
+                                            BTN_DATA_KEY_RELEASE);
+    APP_ERROR_CHECK(ret);
     /* Avoid warnings if assertion is disabled */
     UNUSED_VARIABLE(ret);
+}
+
+static void init_cli(void)
+{
+    ret_code_t ret;
+    ret = bsp_cli_init(bsp_evt_handler);
+    APP_ERROR_CHECK(ret);
+    nrf_drv_uart_config_t uart_config = NRF_DRV_UART_DEFAULT_CONFIG;
+    uart_config.pseltxd = TX_PIN_NUMBER;
+    uart_config.pselrxd = RX_PIN_NUMBER;
+    uart_config.hwfc    = NRF_UART_HWFC_DISABLED;
+    ret = nrf_cli_init(&m_cli_uart, &uart_config, true, true, NRF_LOG_SEVERITY_INFO);
+    APP_ERROR_CHECK(ret);
+    ret = nrf_cli_start(&m_cli_uart);
+    APP_ERROR_CHECK(ret);
 }
 
 static void log_resetreason(void)
@@ -1100,11 +1185,13 @@ static void log_resetreason(void)
 int main(void)
 {
     ret_code_t ret;
+    UNUSED_RETURN_VALUE(NRF_LOG_INIT(NULL));
+
     init_power_clock();
     init_bsp();
+    init_cli();
 
-    UNUSED_RETURN_VALUE(NRF_LOG_INIT(NULL));
-    NRF_LOG_DEFAULT_BACKENDS_INIT();
+    NRF_LOG_INFO("USDB example started.");
     if (NRF_DRV_USBD_ERRATA_ENABLE)
     {
         NRF_LOG_INFO("USB errata 104 %s", (uint32_t)(nrf_drv_usbd_errata_104() ? "enabled" : "disabled"));
@@ -1122,7 +1209,7 @@ int main(void)
     nrf_drv_usbd_ep_max_packet_size_set(NRF_DRV_USBD_EPIN0, EP0_MAXPACKETSIZE);
 
     /* Configure LED and button */
-    bsp_board_leds_init();
+    bsp_board_init(BSP_INIT_LEDS);
     bsp_board_led_on(LED_RUNNING);
     bsp_board_led_on(LED_ACTIVE);
 
@@ -1143,6 +1230,8 @@ int main(void)
         if (!nrf_drv_usbd_is_enabled())
         {
             nrf_drv_usbd_enable();
+            ret = ep_configuration(0);
+            APP_ERROR_CHECK(ret);
         }
         /* Wait for regulator power up */
         while (NRF_DRV_POWER_USB_STATE_CONNECTED
@@ -1194,7 +1283,7 @@ int main(void)
 
         if (m_usbd_configured)
         {
-            if (bsp_button_is_pressed(BTN_MOUSE_MOVE))
+            if (m_send_flag)
             {
                 if (m_usbd_suspended)
                 {
@@ -1211,6 +1300,7 @@ int main(void)
             }
         }
 
+        nrf_cli_process(&m_cli_uart);
         UNUSED_RETURN_VALUE(NRF_LOG_PROCESS());
         bsp_board_led_off(LED_RUNNING);
         /* Even if we miss an event enabling USB,

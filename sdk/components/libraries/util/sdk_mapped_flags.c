@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2015 - 2017, Nordic Semiconductor ASA
+ * Copyright (c) 2015 - 2018, Nordic Semiconductor ASA
  * 
  * All rights reserved.
  * 
@@ -42,6 +42,11 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include "compiler_abstraction.h"
+
+
+// Test whether the flag collection type is large enough to hold all the flags. If this fails,
+// reduce SDK_MAPPED_FLAGS_N_KEYS or increase the size of sdk_mapped_flags_t.
+STATIC_ASSERT((sizeof(sdk_mapped_flags_t) * SDK_MAPPED_FLAGS_N_KEYS_PER_BYTE) >= SDK_MAPPED_FLAGS_N_KEYS);
 
 
 /**@brief Function for setting the state of a flag to true.

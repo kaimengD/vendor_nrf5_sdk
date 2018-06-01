@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2017 - 2017, Nordic Semiconductor ASA
+ * Copyright (c) 2017 - 2018, Nordic Semiconductor ASA
  * 
  * All rights reserved.
  * 
@@ -79,7 +79,7 @@ ret_code_t ndef_file_setup(void);
 ret_code_t ndef_file_update(uint8_t const * p_buff, uint32_t size);
 
 /**
- * @breif   Function for loading NDEF message from the flash file.
+ * @brief   Function for loading NDEF message from the flash file.
  *
  * @details If the flash file does not exist, the default NDEF message
  *          is created and stored in flash.

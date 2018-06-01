@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2015 - 2017, Nordic Semiconductor ASA
+ * Copyright (c) 2015 - 2018, Nordic Semiconductor ASA
  * 
  * All rights reserved.
  * 
@@ -73,12 +73,6 @@ extern "C" {
 #define SDK_MAPPED_FLAGS_INVALID_INDEX   0xFFFF  /**< A flag index guaranteed to be invalid. */
 
 typedef uint32_t sdk_mapped_flags_t; /**< The bitmap to hold flags. Each flag is one bit, and each bit represents the flag state associated with one key. */
-
-
-// Test whether the flag collection type is large enough to hold all the flags. If this fails,
-// reduce SDK_MAPPED_FLAGS_N_KEYS or increase the size of sdk_mapped_flags_t.
-STATIC_ASSERT((
-    sizeof(sdk_mapped_flags_t) * SDK_MAPPED_FLAGS_N_KEYS_PER_BYTE) >= SDK_MAPPED_FLAGS_N_KEYS);
 
 
 /**@brief Type used to present a subset of the registered keys.

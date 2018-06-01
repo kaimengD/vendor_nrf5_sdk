@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2014 - 2017, Nordic Semiconductor ASA
+ * Copyright (c) 2014 - 2018, Nordic Semiconductor ASA
  * 
  * All rights reserved.
  * 
@@ -96,6 +96,8 @@
 #include "nrf_fstorage.h"
 #include "fds.h"
 #include "nrf_ble_gatt.h"
+#include "nrf_ble_qwr.h"
+#include "nrf_pwr_mgmt.h"
 
 #include "nrf_log.h"
 #include "nrf_log_ctrl.h"
@@ -110,15 +112,14 @@
 #define DEVICE_NAME                     "Relay"                                     /**< Name of device used for advertising. */
 #define MANUFACTURER_NAME               "NordicSemiconductor"                       /**< Manufacturer. Will be passed to Device Information Service. */
 #define APP_ADV_INTERVAL                300                                         /**< The advertising interval (in units of 0.625 ms). This value corresponds to 187.5 ms. */
-#define APP_ADV_TIMEOUT_IN_SECONDS      180                                         /**< The advertising timeout in units of seconds. */
+
+#define APP_ADV_DURATION                18000                                       /**< The advertising duration (180 seconds) in units of 10 milliseconds. */
 
 #define APP_BLE_CONN_CFG_TAG            1                                           /**< A tag identifying the SoftDevice BLE configuration. */
 
 #define FIRST_CONN_PARAMS_UPDATE_DELAY  APP_TIMER_TICKS(5000)                       /**< Time from initiating event (connect or start of notification) to first time sd_ble_gap_conn_param_update is called (5 seconds). */
 #define NEXT_CONN_PARAMS_UPDATE_DELAY   APP_TIMER_TICKS(30000)                      /**< Time between each call to sd_ble_gap_conn_param_update after the first call (30 seconds). */
 #define MAX_CONN_PARAMS_UPDATE_COUNT    3                                           /**< Number of attempts before giving up the connection parameter negotiation. */
-
-#define APP_FEATURE_NOT_SUPPORTED       BLE_GATT_STATUS_ATTERR_APP_BEGIN + 2        /**< Reply when unsupported features are requested. */
 
 #define SEC_PARAM_BOND                  1                                           /**< Perform bonding. */
 #define SEC_PARAM_MITM                  0                                           /**< Man In The Middle protection not required. */
@@ -131,54 +132,33 @@
 
 #define SCAN_INTERVAL                   0x00A0                                      /**< Determines scan interval in units of 0.625 millisecond. */
 #define SCAN_WINDOW                     0x0050                                      /**< Determines scan window in units of 0.625 millisecond. */
-#define SCAN_TIMEOUT                    0
+
+#define SCAN_DURATION                   0x0000                                      /**< Duration of the scanning in units of 10 milliseconds. If set to 0x0000, scanning will continue until it is explicitly disabled. */
+
 
 #define MIN_CONNECTION_INTERVAL         (uint16_t) MSEC_TO_UNITS(7.5, UNIT_1_25_MS) /**< Determines minimum connection interval in milliseconds. */
 #define MAX_CONNECTION_INTERVAL         (uint16_t) MSEC_TO_UNITS(30, UNIT_1_25_MS)  /**< Determines maximum connection interval in milliseconds. */
 #define SLAVE_LATENCY                   0                                           /**< Determines slave latency in terms of connection events. */
 #define SUPERVISION_TIMEOUT             (uint16_t) MSEC_TO_UNITS(4000, UNIT_10_MS)  /**< Determines supervision time-out in units of 10 milliseconds. */
 
-#define UUID16_SIZE                     2                                           /**< Size of a UUID, in bytes. */
-
 /**@brief   Priority of the application BLE event handler.
  * @note    You shouldn't need to modify this value.
  */
-#define APP_BLE_OBSERVER_PRIO           1
-
-/**@brief Macro to unpack 16bit unsigned UUID from an octet stream.
- */
-#define UUID16_EXTRACT(DST, SRC) \
-    do                           \
-    {                            \
-        (*(DST))   = (SRC)[1];   \
-        (*(DST)) <<= 8;          \
-        (*(DST))  |= (SRC)[0];   \
-    } while (0)
+#define APP_BLE_OBSERVER_PRIO           3
 
 
-/**@brief Variable length data encapsulation in terms of length and pointer to data. */
-typedef struct
-{
-    uint8_t  * p_data;   /**< Pointer to data. */
-    uint16_t   data_len; /**< Length of data. */
-} data_t;
-
-
-BLE_HRS_DEF(m_hrs);                                                 /**< Heart rate service instance. */
-BLE_RSCS_DEF(m_rscs);                                               /**< Running speed and cadence service instance. */
-BLE_HRS_C_DEF(m_hrs_c);                                             /**< Heart rate service client instance. */
-BLE_RSCS_C_DEF(m_rscs_c);                                           /**< Running speed and cadence service client instance. */
+static ble_hrs_t m_hrs;                                             /**< Heart rate service instance. */
+static ble_rscs_t m_rscs;                                           /**< Running speed and cadence service instance. */
+static ble_hrs_c_t m_hrs_c;                                         /**< Heart rate service client instance. */
+static ble_rscs_c_t m_rscs_c;                                       /**< Running speed and cadence service client instance. */
 
 NRF_BLE_GATT_DEF(m_gatt);                                           /**< GATT module instance. */
+NRF_BLE_QWRS_DEF(m_qwr, NRF_SDH_BLE_TOTAL_LINK_COUNT);              /**< Context for the Queued Write module.*/
 BLE_ADVERTISING_DEF(m_advertising);                                 /**< Advertising module instance. */
-BLE_DB_DISCOVERY_DEF(m_db_discovery);                               /**< Database discovery module instances. */
+BLE_DB_DISCOVERY_ARRAY_DEF(m_db_discovery, 2);                      /**< Database discovery module instances. */
 
 static uint16_t m_conn_handle_hrs_c  = BLE_CONN_HANDLE_INVALID;     /**< Connection handle for the HRS central application */
 static uint16_t m_conn_handle_rscs_c = BLE_CONN_HANDLE_INVALID;     /**< Connection handle for the RSC central application */
-
-static uint16_t m_conn_handle_to_disc = BLE_CONN_HANDLE_INVALID;    /**< The connection handle on which to retry the DB discovery. */
-static bool     m_retry_db_disc;                                    /**< Retry DB discovery if attempted while busy. */
-static bool     m_do_retry_db_disc;
 
 /**@brief names which the central applications will scan for, and which will be advertised by the peripherals.
  *  if these are set to empty strings, the UUIDs defined below will be used
@@ -197,17 +177,22 @@ static ble_uuid_t m_adv_uuids[] =
 /**@brief Parameters used when scanning. */
 static ble_gap_scan_params_t const m_scan_params =
 {
-    .active   = 1,
-    .interval = SCAN_INTERVAL,
-    .window   = SCAN_WINDOW,
-    .timeout  = SCAN_TIMEOUT,
-    #if (NRF_SD_BLE_API_VERSION <= 2)
-        .selective   = 0,
-        .p_whitelist = NULL,
-    #endif
-    #if (NRF_SD_BLE_API_VERSION >= 3)
-        .use_whitelist = 0,
-    #endif
+    .extended      = 1,
+    .active        = 1,
+    .interval      = SCAN_INTERVAL,
+    .window        = SCAN_WINDOW,
+    .timeout       = SCAN_DURATION,
+    .scan_phys     = BLE_GAP_PHY_1MBPS,
+    .filter_policy = BLE_GAP_SCAN_FP_ACCEPT_ALL,
+};
+
+static uint8_t m_scan_buffer_data[BLE_GAP_SCAN_BUFFER_EXTENDED_MIN]; /**< buffer where advertising reports will be stored by the SoftDevice. */
+
+/**@brief Pointer to the buffer where advertising reports will be stored by the SoftDevice. */
+static ble_data_t m_scan_buffer =
+{
+    m_scan_buffer_data,
+    BLE_GAP_SCAN_BUFFER_EXTENDED_MIN
 };
 
 /**@brief Connection parameters requested for connection. */
@@ -246,41 +231,6 @@ static void conn_params_error_handler(uint32_t nrf_error)
 }
 
 
-/**@brief Parses advertisement data, providing length and location of the field in case
- *        matching data is found.
- *
- * @param[in]  Type of data to be looked for in advertisement data.
- * @param[in]  Advertisement report length and pointer to report.
- * @param[out] If data type requested is found in the data report, type data length and
- *             pointer to data will be populated here.
- *
- * @retval NRF_SUCCESS if the data type is found in the report.
- * @retval NRF_ERROR_NOT_FOUND if the data type could not be found.
- */
-static uint32_t adv_report_parse(uint8_t type, data_t * p_advdata, data_t * p_typedata)
-{
-    uint32_t   index = 0;
-    uint8_t  * p_data;
-
-    p_data = p_advdata->p_data;
-
-    while (index < p_advdata->data_len)
-    {
-        uint8_t field_length = p_data[index];
-        uint8_t field_type   = p_data[index + 1];
-
-        if (field_type == type)
-        {
-            p_typedata->p_data   = &p_data[index + 2];
-            p_typedata->data_len = field_length - 1;
-            return NRF_SUCCESS;
-        }
-        index += field_length + 1;
-    }
-    return NRF_ERROR_NOT_FOUND;
-}
-
-
 /**@brief Function for initiating scanning.
  */
 static void scan_start(void)
@@ -289,7 +239,7 @@ static void scan_start(void)
 
     (void) sd_ble_gap_scan_stop();
 
-    err_code = sd_ble_gap_scan_start(&m_scan_params);
+    err_code = sd_ble_gap_scan_start(&m_scan_params, &m_scan_buffer);
     // It is okay to ignore this error since we are stopping the scan anyway.
     if (err_code != NRF_ERROR_INVALID_STATE)
     {
@@ -365,7 +315,7 @@ static void pm_evt_handler(pm_evt_t const * p_evt)
         {
             // Run garbage collection on the flash.
             err_code = fds_gc();
-            if (err_code == FDS_ERR_BUSY || err_code == FDS_ERR_NO_SPACE_IN_QUEUES)
+            if (err_code == FDS_ERR_NO_SPACE_IN_QUEUES)
             {
                 // Retry.
             }
@@ -378,12 +328,6 @@ static void pm_evt_handler(pm_evt_t const * p_evt)
         case PM_EVT_PEERS_DELETE_SUCCEEDED:
         {
             adv_scan_start();
-        } break;
-
-        case PM_EVT_LOCAL_DB_CACHE_APPLY_FAILED:
-        {
-            // The local database has likely changed, send service changed indications.
-            pm_local_database_has_changed();
         } break;
 
         case PM_EVT_PEER_DATA_UPDATE_FAILED:
@@ -414,6 +358,8 @@ static void pm_evt_handler(pm_evt_t const * p_evt)
         case PM_EVT_PEER_DATA_UPDATE_SUCCEEDED:
         case PM_EVT_PEER_DELETE_SUCCEEDED:
         case PM_EVT_LOCAL_DB_CACHE_APPLIED:
+        case PM_EVT_LOCAL_DB_CACHE_APPLY_FAILED:
+            // This can happen when the local DB has changed.
         case PM_EVT_SERVICE_CHANGED_IND_SENT:
         case PM_EVT_SERVICE_CHANGED_IND_CONFIRMED:
         default:
@@ -464,6 +410,7 @@ static void hrs_c_evt_handler(ble_hrs_c_t * p_hrs_c, ble_hrs_c_evt_t * p_hrs_c_e
             if ((err_code != NRF_SUCCESS) &&
                 (err_code != NRF_ERROR_INVALID_STATE) &&
                 (err_code != NRF_ERROR_RESOURCES) &&
+                (err_code != NRF_ERROR_BUSY) &&
                 (err_code != BLE_ERROR_GATTS_SYS_ATTR_MISSING)
                 )
             {
@@ -532,6 +479,7 @@ static void rscs_c_evt_handler(ble_rscs_c_t * p_rscs_c, ble_rscs_c_evt_t * p_rsc
             if ((err_code != NRF_SUCCESS) &&
                 (err_code != NRF_ERROR_INVALID_STATE) &&
                 (err_code != NRF_ERROR_RESOURCES) &&
+                (err_code != NRF_ERROR_BUSY) &&
                 (err_code != BLE_ERROR_GATTS_SYS_ATTR_MISSING)
                 )
             {
@@ -546,102 +494,83 @@ static void rscs_c_evt_handler(ble_rscs_c_t * p_rscs_c, ble_rscs_c_evt_t * p_rsc
 }
 
 
-/**@brief Function for searching a given name in the advertisement packets.
+/**@brief Function for handling the advertising report BLE event.
  *
- * @details Use this function to parse received advertising data and to find a given
- * name in them either as 'complete_local_name' or as 'short_local_name'.
- *
- * @param[in]   p_adv_report   advertising data to parse.
- * @param[in]   name_to_find   name to search.
- * @return   true if the given name was found, false otherwise.
+ * @param[in] p_adv_report  Advertising report from the SoftDevice.
  */
-static bool find_adv_name(ble_gap_evt_adv_report_t const * p_adv_report, char const * name_to_find)
+static void on_adv_report(ble_gap_evt_adv_report_t const * p_adv_report)
 {
     ret_code_t err_code;
-    data_t     adv_data;
-    data_t     dev_name;
 
-    // Initialize advertisement report for parsing
-    adv_data.p_data   = (uint8_t *)p_adv_report->data;
-    adv_data.data_len = p_adv_report->dlen;
-
-    //search for advertising names
-    err_code = adv_report_parse(BLE_GAP_AD_TYPE_COMPLETE_LOCAL_NAME, &adv_data, &dev_name);
-    if (err_code == NRF_SUCCESS)
+    if (strlen(m_target_periph_name) != 0)
     {
-        if (memcmp(name_to_find, dev_name.p_data, dev_name.data_len)== 0)
+        if (ble_advdata_name_find(p_adv_report->data.p_data,
+                                  p_adv_report->data.len,
+                                  m_target_periph_name))
         {
-            return true;
+            // Initiate connection.
+            err_code = sd_ble_gap_connect(&p_adv_report->peer_addr,
+                                          &m_scan_params,
+                                          &m_connection_param,
+                                          APP_BLE_CONN_CFG_TAG);
+            if (err_code != NRF_SUCCESS)
+            {
+                NRF_LOG_INFO("Connection Request Failed, reason %d", err_code);
+            }
+        }
+        else
+        {
+            err_code = sd_ble_gap_scan_start(NULL, &m_scan_buffer);
+            APP_ERROR_CHECK(err_code);
         }
     }
     else
     {
-        // Look for the short local name if it was not found as complete
-        err_code = adv_report_parse(BLE_GAP_AD_TYPE_SHORT_LOCAL_NAME,
-                                    &adv_data,
-                                    &dev_name);
-        if (err_code != NRF_SUCCESS)
+        ble_uuid_t target_uuid_hr = {.uuid = BLE_UUID_HEART_RATE_SERVICE, .type = BLE_UUID_TYPE_BLE};
+        ble_uuid_t target_uuid_rs = {.uuid = BLE_UUID_RUNNING_SPEED_AND_CADENCE, .type = BLE_UUID_TYPE_BLE};
+
+        // We do not want to connect to two peripherals offering the same service, so when
+        // a UUID is matched, we check whether we are not already connected to a peer which
+        // offers the same service.
+        if (   (ble_advdata_uuid_find(p_adv_report->data.p_data, p_adv_report->data.len, &target_uuid_hr)
+                && (m_conn_handle_hrs_c == BLE_CONN_HANDLE_INVALID))
+            || (ble_advdata_uuid_find(p_adv_report->data.p_data, p_adv_report->data.len, &target_uuid_rs)
+                && (m_conn_handle_rscs_c == BLE_CONN_HANDLE_INVALID)))
         {
-            return false;
+            // Initiate connection.
+            err_code = sd_ble_gap_connect(&p_adv_report->peer_addr,
+                                          &m_scan_params,
+                                          &m_connection_param,
+                                          APP_BLE_CONN_CFG_TAG);
+            if (err_code != NRF_SUCCESS)
+            {
+                NRF_LOG_WARNING("Connection Request Failed, reason %d", err_code);
+            }
         }
-        if (memcmp(m_target_periph_name, dev_name.p_data, dev_name.data_len)== 0)
+        else
         {
-            return true;
+            err_code = sd_ble_gap_scan_start(NULL, &m_scan_buffer);
+            APP_ERROR_CHECK(err_code);
         }
     }
-    return false;
 }
 
 
-/**@brief Function for searching a UUID in the advertisement packets.
+/**@brief Function for assigning new connection handle to available instance of QWR module.
  *
- * @details Use this function to parse received advertising data and to find a given
- * UUID in them.
- *
- * @param[in]   p_adv_report   advertising data to parse.
- * @param[in]   uuid_to_find   UUIID to search.
- * @return   true if the given UUID was found, false otherwise.
+ * @param[in] conn_handle New connection handle.
  */
-static bool find_adv_uuid(ble_gap_evt_adv_report_t const * p_adv_report, uint16_t uuid_to_find)
+static void multi_qwr_conn_handle_assign(uint16_t conn_handle)
 {
-    ret_code_t err_code;
-    data_t     adv_data;
-    data_t     type_data;
-
-    // Initialize advertisement report for parsing.
-    adv_data.p_data   = (uint8_t *)p_adv_report->data;
-    adv_data.data_len = p_adv_report->dlen;
-
-    err_code = adv_report_parse(BLE_GAP_AD_TYPE_16BIT_SERVICE_UUID_MORE_AVAILABLE,
-                                &adv_data,
-                                &type_data);
-
-    if (err_code != NRF_SUCCESS)
+    for (uint32_t i = 0; i < NRF_SDH_BLE_TOTAL_LINK_COUNT; i++)
     {
-        // Look for the services in 'complete' if it was not found in 'more available'.
-        err_code = adv_report_parse(BLE_GAP_AD_TYPE_16BIT_SERVICE_UUID_COMPLETE,
-                                    &adv_data,
-                                    &type_data);
-
-        if (err_code != NRF_SUCCESS)
+        if (m_qwr[i].conn_handle == BLE_CONN_HANDLE_INVALID)
         {
-            // If we can't parse the data, then exit.
-            return false;
+            ret_code_t err_code = nrf_ble_qwr_conn_handle_assign(&m_qwr[i], conn_handle);
+            APP_ERROR_CHECK(err_code);
+            break;
         }
     }
-
-    // Verify if any UUID match the given UUID.
-    for (uint32_t i = 0; i < (type_data.data_len / UUID16_SIZE); i++)
-    {
-        uint16_t extracted_uuid;
-        UUID16_EXTRACT(&extracted_uuid, &type_data.p_data[i * UUID16_SIZE]);
-
-        if (extracted_uuid == uuid_to_find)
-        {
-            return true;
-        }
-    }
-    return false;
 }
 
 
@@ -670,24 +599,25 @@ static void on_ble_central_evt(ble_evt_t const * p_ble_evt)
                 || (m_conn_handle_rscs_c == BLE_CONN_HANDLE_INVALID))
             {
                 NRF_LOG_INFO("Attempt to find HRS or RSC on conn_handle 0x%x", p_gap_evt->conn_handle);
-                if (m_db_discovery.discovery_in_progress)
+
+                err_code = ble_db_discovery_start(&m_db_discovery[0], p_gap_evt->conn_handle);
+                if (err_code == NRF_ERROR_BUSY)
                 {
-                    NRF_LOG_INFO("DB discovery is already in progress. Will retry later.")
-                    m_retry_db_disc = true;
-                    m_conn_handle_to_disc = p_gap_evt->conn_handle;
+                    err_code = ble_db_discovery_start(&m_db_discovery[1], p_gap_evt->conn_handle);
+                    APP_ERROR_CHECK(err_code);
                 }
                 else
                 {
-                    memset(&m_db_discovery, 0x00, sizeof(m_db_discovery));
-
-                    err_code = ble_db_discovery_start(&m_db_discovery, p_gap_evt->conn_handle);
                     APP_ERROR_CHECK(err_code);
                 }
             }
 
+            // Assing connection handle to the QWR module.
+            multi_qwr_conn_handle_assign(p_gap_evt->conn_handle);
+
             // Update LEDs status, and check if we should be looking for more peripherals to connect to.
             bsp_board_led_on(CENTRAL_CONNECTED_LED);
-            if (ble_conn_state_n_centrals() == NRF_SDH_BLE_CENTRAL_LINK_COUNT)
+            if (ble_conn_state_central_conn_count() == NRF_SDH_BLE_CENTRAL_LINK_COUNT)
             {
                 bsp_board_led_off(CENTRAL_SCANNING_LED);
             }
@@ -728,7 +658,7 @@ static void on_ble_central_evt(ble_evt_t const * p_ble_evt)
                 bsp_board_led_on(CENTRAL_SCANNING_LED);
             }
 
-            if (ble_conn_state_n_centrals() == 0)
+            if (ble_conn_state_central_conn_count() == 0)
             {
                 bsp_board_led_off(CENTRAL_CONNECTED_LED);
             }
@@ -736,42 +666,7 @@ static void on_ble_central_evt(ble_evt_t const * p_ble_evt)
 
         case BLE_GAP_EVT_ADV_REPORT:
         {
-            if (strlen(m_target_periph_name) != 0)
-            {
-                if (find_adv_name(&p_gap_evt->params.adv_report, m_target_periph_name))
-                {
-                    // Initiate connection.
-                    err_code = sd_ble_gap_connect(&p_gap_evt->params.adv_report.peer_addr,
-                                                  &m_scan_params,
-                                                  &m_connection_param,
-                                                  APP_BLE_CONN_CFG_TAG);
-                    if (err_code != NRF_SUCCESS)
-                    {
-                        NRF_LOG_INFO("Connection Request Failed, reason %d", err_code);
-                    }
-                }
-            }
-            else
-            {
-                // We do not want to connect to two peripherals offering the same service, so when
-                // a UUID is matched, we check that we are not already connected to a peer which
-                // offers the same service.
-                if (   (find_adv_uuid(&p_gap_evt->params.adv_report, BLE_UUID_HEART_RATE_SERVICE)
-                        && (m_conn_handle_hrs_c == BLE_CONN_HANDLE_INVALID))
-                    || (find_adv_uuid(&p_gap_evt->params.adv_report, BLE_UUID_RUNNING_SPEED_AND_CADENCE)
-                        && (m_conn_handle_rscs_c == BLE_CONN_HANDLE_INVALID)))
-                {
-                    // Initiate connection.
-                    err_code = sd_ble_gap_connect(&p_gap_evt->params.adv_report.peer_addr,
-                                                  &m_scan_params,
-                                                  &m_connection_param,
-                                                  APP_BLE_CONN_CFG_TAG);
-                    if (err_code != NRF_SUCCESS)
-                    {
-                        NRF_LOG_WARNING("Connection Request Failed, reason %d", err_code);
-                    }
-                }
-            }
+            on_adv_report(&p_gap_evt->params.adv_report);
         } break; // BLE_GAP_ADV_REPORT
 
         case BLE_GAP_EVT_TIMEOUT:
@@ -791,7 +686,6 @@ static void on_ble_central_evt(ble_evt_t const * p_ble_evt)
             APP_ERROR_CHECK(err_code);
         } break;
 
-#if defined(S132)
         case BLE_GAP_EVT_PHY_UPDATE_REQUEST:
         {
             NRF_LOG_DEBUG("PHY update request.");
@@ -803,7 +697,6 @@ static void on_ble_central_evt(ble_evt_t const * p_ble_evt)
             err_code = sd_ble_gap_phy_update(p_ble_evt->evt.gap_evt.conn_handle, &phys);
             APP_ERROR_CHECK(err_code);
         } break;
-#endif
 
         case BLE_GATTC_EVT_TIMEOUT:
             // Disconnect on GATT Client timeout event.
@@ -843,6 +736,9 @@ static void on_ble_peripheral_evt(ble_evt_t const * p_ble_evt)
             NRF_LOG_INFO("Peripheral connected");
             bsp_board_led_off(PERIPHERAL_ADVERTISING_LED);
             bsp_board_led_on(PERIPHERAL_CONNECTED_LED);
+
+            // Assing connection handle to the QWR module.
+            multi_qwr_conn_handle_assign(p_ble_evt->evt.gap_evt.conn_handle);
             break;
 
         case BLE_GAP_EVT_DISCONNECTED:
@@ -850,7 +746,6 @@ static void on_ble_peripheral_evt(ble_evt_t const * p_ble_evt)
             bsp_board_led_off(PERIPHERAL_CONNECTED_LED);
             break;
 
-#if defined(S132)
         case BLE_GAP_EVT_PHY_UPDATE_REQUEST:
         {
             NRF_LOG_DEBUG("PHY update request.");
@@ -862,7 +757,6 @@ static void on_ble_peripheral_evt(ble_evt_t const * p_ble_evt)
             err_code = sd_ble_gap_phy_update(p_ble_evt->evt.gap_evt.conn_handle, &phys);
             APP_ERROR_CHECK(err_code);
         } break;
-#endif
 
         case BLE_GATTC_EVT_TIMEOUT:
             // Disconnect on GATT Client timeout event.
@@ -879,40 +773,6 @@ static void on_ble_peripheral_evt(ble_evt_t const * p_ble_evt)
                                              BLE_HCI_REMOTE_USER_TERMINATED_CONNECTION);
             APP_ERROR_CHECK(err_code);
             break;
-
-        case BLE_EVT_USER_MEM_REQUEST:
-            err_code = sd_ble_user_mem_reply(p_ble_evt->evt.gap_evt.conn_handle, NULL);
-            APP_ERROR_CHECK(err_code);
-            break;
-
-        case BLE_GATTS_EVT_RW_AUTHORIZE_REQUEST:
-        {
-            ble_gatts_evt_rw_authorize_request_t  req;
-            ble_gatts_rw_authorize_reply_params_t auth_reply;
-
-            req = p_ble_evt->evt.gatts_evt.params.authorize_request;
-
-            if (req.type != BLE_GATTS_AUTHORIZE_TYPE_INVALID)
-            {
-                if ((req.request.write.op == BLE_GATTS_OP_PREP_WRITE_REQ)     ||
-                    (req.request.write.op == BLE_GATTS_OP_EXEC_WRITE_REQ_NOW) ||
-                    (req.request.write.op == BLE_GATTS_OP_EXEC_WRITE_REQ_CANCEL))
-                {
-                    if (req.type == BLE_GATTS_AUTHORIZE_TYPE_WRITE)
-                    {
-                        auth_reply.type = BLE_GATTS_AUTHORIZE_TYPE_WRITE;
-                    }
-                    else
-                    {
-                        auth_reply.type = BLE_GATTS_AUTHORIZE_TYPE_READ;
-                    }
-                    auth_reply.params.write.gatt_status = APP_FEATURE_NOT_SUPPORTED;
-                    err_code = sd_ble_gatts_rw_authorize_reply(p_ble_evt->evt.gatts_evt.conn_handle,
-                                                               &auth_reply);
-                    APP_ERROR_CHECK(err_code);
-                }
-            }
-        } break; // BLE_GATTS_EVT_RW_AUTHORIZE_REQUEST
 
         default:
             // No implementation needed.
@@ -947,24 +807,14 @@ static void on_adv_evt(ble_adv_evt_t ble_adv_evt)
     }
 }
 
+
 /**@brief Function for checking if a bluetooth stack event is an advertising timeout.
  *
  * @param[in] p_ble_evt Bluetooth stack event.
  */
 static bool ble_evt_is_advertising_timeout(ble_evt_t const * p_ble_evt)
 {
-  return (   (p_ble_evt->header.evt_id == BLE_GAP_EVT_TIMEOUT)
-          && (p_ble_evt->evt.gap_evt.params.timeout.src == BLE_GAP_TIMEOUT_SRC_ADVERTISING));
-}
-
-
-static void db_discovery_retry(void)
-{
-    m_retry_db_disc = false;
-    NRF_LOG_INFO("Retrying DB discovery on handle 0x%x.", m_conn_handle_to_disc);
-    memset(&m_db_discovery, 0x00, sizeof(m_db_discovery));
-    ret_code_t err_code = ble_db_discovery_start(&m_db_discovery, m_conn_handle_to_disc);
-    APP_ERROR_CHECK(err_code);
+    return (p_ble_evt->header.evt_id == BLE_GAP_EVT_ADV_SET_TERMINATED);
 }
 
 
@@ -981,17 +831,15 @@ static void ble_evt_handler(ble_evt_t const * p_ble_evt, void * p_context)
     // Based on the role this device plays in the connection, dispatch to the right handler.
     if (role == BLE_GAP_ROLE_PERIPH || ble_evt_is_advertising_timeout(p_ble_evt))
     {
+        ble_hrs_on_ble_evt(p_ble_evt, &m_hrs);
+        ble_rscs_on_ble_evt(p_ble_evt, &m_rscs);
         on_ble_peripheral_evt(p_ble_evt);
     }
     else if ((role == BLE_GAP_ROLE_CENTRAL) || (p_ble_evt->header.evt_id == BLE_GAP_EVT_ADV_REPORT))
     {
+        ble_hrs_c_on_ble_evt(p_ble_evt, &m_hrs_c);
+        ble_rscs_c_on_ble_evt(p_ble_evt, &m_rscs_c);
         on_ble_central_evt(p_ble_evt);
-    }
-
-    if (m_do_retry_db_disc)
-    {
-        m_do_retry_db_disc = false;
-        db_discovery_retry();
     }
 }
 
@@ -1107,7 +955,7 @@ static void buttons_leds_init(bool * p_erase_bonds)
     ret_code_t err_code;
     bsp_event_t startup_event;
 
-    err_code = bsp_init(BSP_INIT_LED | BSP_INIT_BUTTONS, NULL);
+    err_code = bsp_init(BSP_INIT_LEDS | BSP_INIT_BUTTONS, NULL);
     APP_ERROR_CHECK(err_code);
 
     err_code = bsp_btn_ble_init(NULL, &startup_event);
@@ -1191,19 +1039,6 @@ static void db_disc_handler(ble_db_discovery_evt_t * p_evt)
 {
     ble_hrs_on_db_disc_evt(&m_hrs_c, p_evt);
     ble_rscs_on_db_disc_evt(&m_rscs_c, p_evt);
-
-    if (   (p_evt->evt_type == BLE_DB_DISCOVERY_COMPLETE)
-        && (m_retry_db_disc)
-        && (m_conn_handle_to_disc != BLE_CONN_HANDLE_INVALID))
-    {
-        // DB discovery cannot be restarted directly here because the
-        // database discovery structure would need to be zeroed, however it is still
-        // needed by the module (it might have pending events to send).
-        // Let's set a flag and re-run DB discovery when we receive the next BLE event.
-
-        NRF_LOG_INFO("DB discovery can be retried.");
-        m_do_retry_db_disc = true;
-    }
 }
 
 
@@ -1217,16 +1052,39 @@ static void db_discovery_init(void)
 }
 
 
+/**@brief Function for handling Queued Write Module errors.
+ *
+ * @details A pointer to this function will be passed to each service which may need to inform the
+ *          application about an error.
+ *
+ * @param[in]   nrf_error   Error code containing information about what went wrong.
+ */
+static void nrf_qwr_error_handler(uint32_t nrf_error)
+{
+    APP_ERROR_HANDLER(nrf_error);
+}
+
+
 /**@brief Function for initializing services that will be used by the application.
  *
  * @details Initialize the Heart Rate, Battery and Device Information services.
  */
 static void services_init(void)
 {
-    ret_code_t      err_code;
-    ble_hrs_init_t  hrs_init;
-    ble_rscs_init_t rscs_init;
-    uint8_t         body_sensor_location;
+    ret_code_t         err_code;
+    ble_hrs_init_t     hrs_init;
+    ble_rscs_init_t    rscs_init;
+    nrf_ble_qwr_init_t qwr_init = {0};
+    uint8_t            body_sensor_location;
+
+    // Initialize Queued Write Module instances.
+    qwr_init.error_handler = nrf_qwr_error_handler;
+
+    for (uint32_t i = 0; i < NRF_SDH_BLE_TOTAL_LINK_COUNT; i++)
+    {
+        err_code = nrf_ble_qwr_init(&m_qwr[i], &qwr_init);
+        APP_ERROR_CHECK(err_code);
+    }
 
     // Initialize the Heart Rate Service.
     body_sensor_location = BLE_HRS_BODY_SENSOR_LOCATION_FINGER;
@@ -1285,7 +1143,7 @@ static void advertising_init(void)
 
     init.config.ble_adv_fast_enabled  = true;
     init.config.ble_adv_fast_interval = APP_ADV_INTERVAL;
-    init.config.ble_adv_fast_timeout  = APP_ADV_TIMEOUT_IN_SECONDS;
+    init.config.ble_adv_fast_timeout  = APP_ADV_DURATION;
 
     init.evt_handler = on_adv_evt;
 
@@ -1307,6 +1165,28 @@ static void log_init(void)
 }
 
 
+/**@brief Function for initializing power management.
+ */
+static void power_management_init(void)
+{
+    ret_code_t err_code;
+    err_code = nrf_pwr_mgmt_init();
+    APP_ERROR_CHECK(err_code);
+}
+
+
+/**@brief Function for handling the idle state (main loop). If there is no pending log operation,
+          then sleep until next the next event occurs.
+ */
+static void idle_state_handle(void)
+{
+    if (NRF_LOG_PROCESS() == false)
+    {
+        nrf_pwr_mgmt_run();
+    }
+}
+
+
 /**@brief Function for initializing the timer.
  */
 static void timer_init(void)
@@ -1316,22 +1196,17 @@ static void timer_init(void)
 }
 
 
-/** @brief Function to sleep until a BLE event is received by the application.
+/**@brief Function for application main entry.
  */
-static void power_manage(void)
-{
-    ret_code_t err_code = sd_app_evt_wait();
-    APP_ERROR_CHECK(err_code);
-}
-
-
 int main(void)
 {
     bool erase_bonds;
 
+    // Initialize.
     log_init();
     timer_init();
     buttons_leds_init(&erase_bonds);
+    power_management_init();
     ble_stack_init();
     gap_params_init();
     gatt_init();
@@ -1343,25 +1218,22 @@ int main(void)
     services_init();
     advertising_init();
 
+    // Start execution.
+    NRF_LOG_INFO("Relay example started.");
+
     if (erase_bonds == true)
     {
         // Scanning and advertising is done upon PM_EVT_PEERS_DELETE_SUCCEEDED event.
         delete_bonds();
-        // Scanning and advertising is done by
     }
     else
     {
         adv_scan_start();
     }
 
-    NRF_LOG_INFO("Relay example started.");
-
+    // Enter main loop.
     for (;;)
     {
-        if (NRF_LOG_PROCESS() == false)
-        {
-            // Wait for BLE events.
-            power_manage();
-        }
+        idle_state_handle();
     }
 }

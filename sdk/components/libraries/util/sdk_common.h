@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013 - 2017, Nordic Semiconductor ASA
+ * Copyright (c) 2013 - 2018, Nordic Semiconductor ASA
  * 
  * All rights reserved.
  * 
@@ -53,7 +53,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
-#include <sdk_config.h>
+#include "sdk_config.h"
 #include "nordic_common.h"
 #include "compiler_abstraction.h"
 #include "sdk_os.h"

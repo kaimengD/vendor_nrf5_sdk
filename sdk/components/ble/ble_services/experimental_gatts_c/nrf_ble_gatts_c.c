@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2017 - 2017, Nordic Semiconductor ASA
+ * Copyright (c) 2017 - 2018, Nordic Semiconductor ASA
  * 
  * All rights reserved.
  * 
@@ -47,6 +47,7 @@
 
 #define NRF_LOG_MODULE_NAME nrf_ble_gatts_c
 #include "nrf_log.h"
+NRF_LOG_MODULE_REGISTER();
 
 
 #define GATTS_LOG          NRF_LOG_DEBUG            /**< A debug logger macro that can be used in this file to perform logging over UART. */
@@ -177,12 +178,11 @@ void nrf_ble_gatts_c_on_db_disc_evt(nrf_ble_gatts_c_t const * const p_gatts_c,
             if (   (p_chars[i].characteristic.uuid.uuid == BLE_UUID_GATT_CHARACTERISTIC_SERVICE_CHANGED)
                 && (p_chars[i].characteristic.char_props.indicate != 0))
             {
-                memcpy(&evt.params.gatts_handles.characteristic,
-                       &p_chars[i].characteristic,
-                       sizeof(ble_gattc_char_t));
+                memcpy(&evt.params.srv_changed_char,
+                       &p_chars[i],
+                       sizeof(ble_gatt_db_char_t));
 
-                evt.params.gatts_handles.cccd_handle = p_chars[i].cccd_handle;
-                evt.evt_type                         = NRF_BLE_GATTS_C_EVT_DISCOVERY_COMPLETE;
+                evt.evt_type           = NRF_BLE_GATTS_C_EVT_DISCOVERY_COMPLETE;
                 GATTS_LOG("Service Changed Characteristic found.\n\r");
                 break;
             }

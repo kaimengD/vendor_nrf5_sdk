@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2014 - 2017, Nordic Semiconductor ASA
+ * Copyright (c) 2014 - 2018, Nordic Semiconductor ASA
  * 
  * All rights reserved.
  * 
@@ -53,7 +53,11 @@ extern "C" {
 #define SER_PHY_SPI_PPI_RDY_CH                  0
 #define SER_PHY_SPI_GPIOTE_RDY_CH               0
 
+#ifdef NRF_SPIS0
+#define SER_PHY_SPI_SLAVE_INSTANCE              0
+#else
 #define SER_PHY_SPI_SLAVE_INSTANCE              1
+#endif
 
 #define SER_PHY_SPI_SLAVE_REQ_PIN               SER_CON_SPIS_REQ_PIN
 #define SER_PHY_SPI_SLAVE_RDY_PIN               SER_CON_SPIS_RDY_PIN

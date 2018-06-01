@@ -412,7 +412,6 @@ static inline bool buf_prealloc(uint32_t content_len, uint32_t * p_wr_idx)
     return ret;
 }
 
-
 /**
  * @brief Function for preallocating a continuous chunk of memory from circular buffer.
  *
@@ -427,43 +426,44 @@ static inline bool buf_prealloc(uint32_t content_len, uint32_t * p_wr_idx)
  *
  * @return A pointer to the allocated buffer. NULL if allocation failed.
  */
-static inline uint32_t * cont_buf_prealloc(uint32_t len32,
-                                           uint32_t * p_offset,
-                                           uint32_t * p_wr_idx)
+// NOTE: Bug fixed version from here:
+// https://devzone.nordicsemi.com/f/nordic-q-a/29103/nrf_log-fixes-in-sdk14-1-0
+static inline uint32_t *cont_buf_prealloc(uint32_t len32,
+                                          uint32_t *p_offset,
+                                          uint32_t *p_wr_idx)
 {
-    uint32_t * p_buf = NULL;
+    uint32_t *p_buf = NULL;
 
     len32 += PUSHED_HEADER_SIZE; // Increment because 32bit header is needed to be stored.
 
     CRITICAL_REGION_ENTER();
     *p_wr_idx = m_log_data.wr_idx;
     uint32_t available_words = (m_log_data.mask + 1) -
-                               (m_log_data.wr_idx & m_log_data.mask);
-    if (len32 <= available_words)
+                               (m_log_data.wr_idx - m_log_data.rd_idx);
+    uint32_t cont_words = (m_log_data.mask + 1) - (m_log_data.wr_idx & m_log_data.mask);
+
+    //available space is continuous
+    uint32_t curr_pos_available = (available_words <= cont_words) ? available_words : cont_words;
+    uint32_t start_pos_available = (available_words <= cont_words) ? 0 : (available_words - cont_words);
+    if (len32 <= curr_pos_available)
     {
         // buffer will fit as is
-        p_buf              = &m_log_data.buffer[(m_log_data.wr_idx + 1) & m_log_data.mask];
+        p_buf = &m_log_data.buffer[(m_log_data.wr_idx + 1) & m_log_data.mask];
         m_log_data.wr_idx += len32;
-        *p_offset          = 0;
+        *p_offset = 0;
     }
-    else if (len32 < (m_log_data.rd_idx & m_log_data.mask))
+    else if (len32 <= start_pos_available)
     {
         // wraping to the begining of the buffer
-        m_log_data.wr_idx += (len32 + available_words - 1);
-        *p_offset          = available_words - 1;
-        p_buf              = m_log_data.buffer;
+        m_log_data.wr_idx += (len32 + cont_words);
+        *p_offset = cont_words;
+        p_buf = m_log_data.buffer;
     }
-    available_words = (m_log_data.mask + 1) - (m_log_data.wr_idx - m_log_data.rd_idx);
-    // If there is no more room for even overflow tag indicate failed allocation.
-    if (available_words < HEADER_SIZE)
-    {
-        p_buf = NULL;
-    }
+
     CRITICAL_REGION_EXIT();
 
     return p_buf;
 }
-
 
 uint32_t nrf_log_push(char * const p_str)
 {

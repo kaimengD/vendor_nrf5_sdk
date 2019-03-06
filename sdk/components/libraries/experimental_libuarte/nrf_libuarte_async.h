@@ -204,7 +204,12 @@ void nrf_libuarte_async_timeout_handler(const nrf_libuarte_async_t * p_libuarte)
                static const nrfx_rtc_t CONCAT_2(_name, _rtc) = NRFX_RTC_INSTANCE(_rtc1_idx);),\
               (/* empty */))\
       static nrf_libuarte_async_ctrl_blk_t CONCAT_2(_name, ctrl_blk);\
-      static void CONCAT_2(_name, _rtc_handler)(nrfx_rtc_int_type_t int_type);\
+      _LIBUARTE_ASYNC_EVAL(\
+          NRFX_CONCAT_3(NRFX_RTC, _rtc1_idx, _ENABLED),\
+          (\
+           static void CONCAT_2(_name, _rtc_handler)(nrfx_rtc_int_type_t int_type); \
+           ),                                                          \
+          () ) \
       static nrf_libuarte_async_t _name = {\
               .p_rx_pool = &CONCAT_2(_name,_rx_pool),\
               .p_rx_queue =  &CONCAT_2(_name,_rxdata_queue),\

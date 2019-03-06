@@ -176,7 +176,6 @@ static void uart_evt_handler(void * context, nrf_libuarte_evt_t * p_evt)
         break;
     }
     default:
-        APP_ERROR_CHECK_BOOL(false);
         break;
     }
 }
